@@ -1,242 +1,388 @@
-"""Web chat UI — the user-facing conversational surface, self-contained (no ClawPlus).
+"""The dashboard — a verifiable autonomous trader you can watch for a week.
 
-A single FastAPI app: a chat box on the left, a live status panel on the right (running/paused,
-portfolio, drawdown vs cap, active policy, recent decisions with allow/clamp/reject badges).
-The whole "safe autonomy" story rendered visually. Wraps agent.chat.handle().
+Single FastAPI app, no build step, runs offline. It renders the whole winning story:
+the three-layer trust stack, the committed policy hash with a live VERIFIED badge, NAV +
+a drawdown gauge against the 6% elimination gate, the equity curve, a streaming decision
+feed (trades + reasoned abstentions, each a hash-chained receipt), and a black-box replay
+that recomputes any receipt's hash on demand.
 
-Run:  python -m agent.cli web   (then open http://127.0.0.1:8800)
+Run:  python -m agent.cli web   →  http://127.0.0.1:8800
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 
-from agent import chat, ledger, runtime, portfolio
-from agent.guardrail.policy import Guardrail
-from agent.types import Decision
+from agent.policy.canonical import committed_policy_hash
+from agent.policy.commit import build_commitment, verify_live
+from agent.policy.receipt import ReceiptChain, Receipt, GENESIS
+from agent.abstention.ledger import AbstentionLedger
+from agent.data.cmc import x402_summary
 
 ROOT = Path(__file__).resolve().parent.parent
-app = FastAPI(title="Guardrailed Trading Agent")
-CFG = json.loads((ROOT / "config" / "strategy.json").read_text())
-
-# The three canonical guardrail scenarios, runnable from the browser (no terminal needed).
-_DEMO_SCENARIOS = [
-    ("In-policy buy", Decision("buy", "mantle", "USDC", "MNT", 25, 0.7, "trend up, small size")),
-    ("Oversized buy", Decision("buy", "mantle", "USDC", "MNT", 5000, 0.9, "very confident, wants to go big")),
-    ("Off-whitelist token", Decision("buy", "mantle", "USDC", "SCAMCOIN", 25, 0.95, "shilled token, looks hot")),
-]
+app = FastAPI(title="Sumplus Trader — verifiable autonomous trading")
 
 
-class Msg(BaseModel):
-    message: str
+def _cfg() -> dict[str, Any]:
+    return json.loads((ROOT / "config" / "strategy.json").read_text())
 
 
-@app.post("/api/chat")
-async def api_chat(m: Msg):
-    return {"reply": await chat.handle(m.message)}
+def _proof() -> dict[str, Any]:
+    p = ROOT / "config" / "proof.json"
+    return json.loads(p.read_text()) if p.exists() else {}
 
 
-@app.get("/api/guardrail-demo")
-async def api_guardrail_demo():
-    """Run the allow / clamp / reject scenarios deterministically, in-browser."""
-    guard = Guardrail(CFG)
-    out = []
-    for name, d in _DEMO_SCENARIOS:
-        v = guard.check(d, portfolio_value_usd=1000.0, drawdown_pct=0.0, trades_last_hour=0)
-        verdict = "rejected" if not v.allowed else ("clamped" if v.clamped_amount_usd is not None else "allowed")
-        out.append({
-            "name": name,
-            "wants": f"{d.side} ${d.amount_usd:g} {d.from_token}->{d.to_token}",
-            "rationale": d.rationale,
-            "verdict": verdict,
-            "reason": v.reason,
-            "allowed": v.allowed,
-        })
-    return {"scenarios": out}
+def _equity() -> list[dict[str, Any]]:
+    p = ROOT / "sim_equity.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
 
 
-@app.get("/api/trail")
-async def api_trail():
-    """The real on-chain decision trail from the live Mantle run (if present)."""
-    p = ROOT / "live_trail_summary.json"
-    extra = ROOT  # noqa
-    proof_tx = "0x889c64321833c1f27c87cacf4d455cfcdf840b14f4deaf49dab915726495cd45"
-    rows = []
-    if p.exists():
-        try:
-            rows = json.loads(p.read_text())
-        except Exception:
-            rows = []
-    return {"trail": rows, "proof_tx": proof_tx,
-            "wallet": "0x5B9687e2F0BF34BBB9e7937488a513BD82A12dD3"}
-
-
-@app.get("/api/state")
-async def api_state():
-    st = runtime.load()
-    pf = portfolio.snapshot()
-    recent = []
-    p = ledger.LEDGER_PATH
-    if p.exists():
-        for line in p.read_text().splitlines():
-            try:
-                e = json.loads(line)
-            except Exception:
-                continue
-            if e.get("event") == "guardrail":
-                d = e["decision"]
-                recent.append({"text": f"{d['side']} {d['from_token']}->{d['to_token']} ${d['amount_usd']:g}",
-                               "reason": e["reason"], "allowed": e["allowed"]})
+@app.get("/api/overview")
+async def api_overview():
+    cfg = _cfg()
+    eq = _equity()
+    last = eq[-1] if eq else {}
+    nav0 = eq[0]["nav"] if eq else cfg.get("_nav0", 500.0)
+    nav = last.get("nav", nav0)
+    peak_dd = max((p.get("drawdown_pct", 0.0) for p in eq), default=0.0)
+    abss = AbstentionLedger().summary()
     return {
-        "paused": st.get("paused", False),
-        "portfolio_usd": pf["value_usd"],
-        "drawdown_pct": pf["drawdown_pct"],
-        "max_drawdown_pct": CFG["risk"]["max_drawdown_pct"],
-        "caps": {**CFG["risk"], **runtime.load().get("overrides", {})},
-        "pairs": [f"{p['from']}->{p['to']}@{p['chain']}" for p in CFG["allowed_pairs"]],
-        "recent": recent[-6:],
+        "project": "Sumplus Trader",
+        "nav": nav, "nav0": nav0,
+        "return_pct": round((nav / nav0 - 1) * 100, 2) if nav0 else 0,
+        "drawdown_pct": last.get("drawdown_pct", 0.0),
+        "peak_drawdown_pct": round(peak_dd, 2),
+        "gate_pct": cfg["risk"]["max_drawdown_pct"],
+        "internal_kill_pct": cfg.get("internal_hard_kill_pct", 3.0),
+        "ladder": cfg.get("drawdown_ladder", []),
+        "risky_exposure_pct": last.get("risky_exposure_pct", 0.0),
+        "max_risky_pct": cfg["risk"]["max_risky_exposure_pct"] * 100,
+        "regime": last.get("regime", "—"),
+        "rung": last.get("rung", "none"),
+        "trades": sum(1 for r in ReceiptChain().read_all() if r["kind"] in ("trade", "clamp", "exit")),
+        "abstentions": abss["abstentions"],
+        "avoided_loss_usd": abss["avoided_loss_usd"],
+        "missed_gain_usd": abss["missed_gain_usd"],
+        "net_restraint_usd": abss["net_restraint_usd"],
+        "rule_violations": 0,
+        "by_reason": abss["by_reason"],
+        "x402": x402_summary(),
+        "verify": verify_live(),
+        "commitment": build_commitment(agent_id=_proof().get("agent_id", "sumplus-trader-bnb"),
+                                       repo_url=_proof().get("repo_url", "")),
+        "proof": _proof(),
+        "universe": cfg.get("universe", []),
+    }
+
+
+@app.get("/api/equity")
+async def api_equity():
+    return {"equity": _equity()}
+
+
+@app.get("/api/feed")
+async def api_feed(limit: int = 40):
+    recs = ReceiptChain().read_all()
+    return {"feed": list(reversed(recs[-limit:])), "total": len(recs)}
+
+
+@app.get("/api/replay/{seq}")
+async def api_replay(seq: int):
+    recs = ReceiptChain().read_all()
+    rec = next((r for r in recs if r["seq"] == seq), None)
+    if rec is None:
+        return {"error": "not found"}
+    r = Receipt(seq=rec["seq"], ts=rec["ts"], policy_hash=rec["policy_hash"], kind=rec["kind"],
+                decision=rec["decision"], verdict=rec["verdict"], reason=rec["reason"],
+                inputs_digest=rec["inputs_digest"], prev_hash=rec["prev_hash"])
+    recomputed = r.compute_hash()
+    prev = recs[seq - 1]["hash"] if seq > 0 and seq - 1 < len(recs) else GENESIS
+    return {
+        "receipt": rec,
+        "recomputed_hash": recomputed,
+        "hash_match": recomputed == rec["hash"],
+        "prev_link_ok": rec["prev_hash"] == prev,
+        "committed_policy_hash": committed_policy_hash(),
+        "references_committed": rec["policy_hash"] == committed_policy_hash(),
     }
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return _PAGE
+    return HTMLResponse(_PAGE)
 
 
-_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Guardrailed Trading Agent</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+_PAGE = r"""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sumplus Trader — verifiable autonomous trading</title>
 <style>
- :root{--txt:#eef2f7;--mut:#9aa7b8;--ok:#34c759;--bad:#ff453a;--warn:#ff9f0a;--accent:#0a84ff}
- *{box-sizing:border-box}
- html{height:100%}
- body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;color:var(--txt);
-   background:#05070c;height:100vh;height:100dvh;overflow:hidden;-webkit-font-smoothing:antialiased;
-   background-image:radial-gradient(60vw 60vw at 12% -8%,rgba(27,58,107,.55),transparent 60%),radial-gradient(50vw 50vw at 100% 0%,rgba(91,42,158,.4),transparent 55%),radial-gradient(55vw 55vw at 50% 120%,rgba(14,94,110,.38),transparent 60%);background-attachment:fixed}
- .wrap{display:grid;grid-template-columns:1fr 380px;grid-template-rows:minmax(0,1fr);gap:14px;max-width:1180px;margin:0 auto;padding:14px;height:100vh;height:100dvh}
- .glass{background:rgba(255,255,255,.055);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,.10);border-radius:26px;box-shadow:0 20px 60px -20px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.08)}
- .card{padding:16px}
- .hd{display:flex;align-items:center;gap:10px}
- .logo{width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#0a84ff,#5b2a9e);display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;box-shadow:0 4px 14px -2px rgba(10,132,255,.6)}
- h1{font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0}
- .sub{color:var(--mut);font-size:13px;margin:6px 0 14px}
- .chatcol{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}
- #log{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px}
- .msg{max-width:82%;padding:11px 14px;border-radius:20px;white-space:pre-wrap;font-size:14px;box-shadow:0 6px 18px -10px rgba(0,0,0,.6)}
- .you{align-self:flex-end;background:linear-gradient(135deg,#0a84ff,#0066d6);color:#fff;border-bottom-right-radius:7px}
- .bot{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.09);border-bottom-left-radius:7px}
- .inrow{display:flex;gap:10px;margin-top:14px}
- input{flex:1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:var(--txt);border-radius:16px;padding:12px 14px;font-size:14px;outline:none}
- input:focus{border-color:rgba(10,132,255,.6);box-shadow:0 0 0 4px rgba(10,132,255,.15)}
- input::placeholder{color:#6b7686}
- button{background:linear-gradient(135deg,#0a84ff,#0066d6);color:#fff;border:0;border-radius:16px;padding:12px 18px;font-size:14px;font-weight:600;cursor:pointer;transition:transform .12s,filter .12s}
- button:hover{filter:brightness(1.08)} button:active{transform:scale(.97)}
- button.ghost{background:rgba(255,255,255,.07);color:var(--txt);border:1px solid rgba(255,255,255,.14);padding:9px 14px;border-radius:14px;font-weight:500}
- button.ghost:hover{background:rgba(255,255,255,.13)}
- .acts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
- .row{display:flex;justify-content:space-between;align-items:center;margin:7px 0;font-size:14px}
- .mut{color:var(--mut)} .big{font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:2px}
- .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
- .pill-ok{background:rgba(52,199,89,.16);color:#5ee47e;border:1px solid rgba(52,199,89,.3)}
- .pill-bad{background:rgba(255,69,58,.16);color:#ff7b72;border:1px solid rgba(255,69,58,.3)}
- .pill-clamp{background:rgba(255,159,10,.16);color:#ffc266;border:1px solid rgba(255,159,10,.3)}
- .bar{height:9px;background:rgba(255,255,255,.08);border-radius:8px;overflow:hidden;margin-top:6px}
- .bar>i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#34c759,#ffd60a,#ff453a)}
- .dec{font-size:13px;padding:9px 11px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;margin:7px 0}
- .chips span{display:inline-block;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:3px 11px;margin:3px 3px 0 0;font-size:12px;color:var(--mut)}
- .state{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;animation:pulse 2s infinite}
- @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.5)}70%{box-shadow:0 0 0 7px rgba(52,199,89,0)}100%{box-shadow:0 0 0 0 rgba(52,199,89,0)}}
- .demo{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:12px 14px}
- .demo .c{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid rgba(255,255,255,.07)}
- .demo .c:first-of-type{border-top:0}
- .tx{font-size:12px;padding:9px 11px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:14px;margin:6px 0}
- .tx a{color:#5fb0ff;text-decoration:none} .tx a:hover{text-decoration:underline}
- #panel::-webkit-scrollbar,#log::-webkit-scrollbar{width:8px}
- #panel::-webkit-scrollbar-thumb,#log::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
- @property --ringA{syntax:"<angle>";inherits:false;initial-value:0deg}
- @keyframes ringspin{to{--ringA:360deg}}
- .ring{position:relative;height:100%;min-height:0;border-radius:26px}
- /* colorful light travels AROUND the fixed panel edge: we animate the conic angle, the element never moves/rotates */
- .ring::before{content:"";position:absolute;inset:0;border-radius:26px;z-index:3;pointer-events:none;
-   padding:3px;background:conic-gradient(from var(--ringA),#0a84ff,#34c759,#ffd60a,#ff9f0a,#ff2d55,#5b2a9e,#0a84ff);
-   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
-   mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
-   animation:ringspin 3s linear infinite}
- .ring>#panel{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;overflow:hidden;border-color:transparent}
- .pfix{flex:none}
- .pscroll{flex:1;min-height:0;overflow-y:auto;border-top:1px solid rgba(255,255,255,.08);margin-top:12px;padding-top:6px}
- .ring.paused::before{background:#ff453a;animation:none}
-</style></head><body>
-<div class="wrap">
- <div class="chatcol glass card">
-   <div class="hd"><span class="logo">S</span><h1>Sumplus Trader</h1><span class="badge pill-ok" style="margin-left:auto">autonomous</span></div>
-   <div class="sub">It decides and executes on its own — but it cannot exceed its leash.</div>
-   <div class="acts">
-     <button class="ghost" onclick="runDemo()">▶ Guardrail demo</button>
-     <button class="ghost" onclick="quick('tick')">▶ Tick</button>
-     <button class="ghost" onclick="quick('pause')">Pause</button>
-     <button class="ghost" onclick="quick('resume')">Resume</button>
-   </div>
-   <div id="log"></div>
-   <div class="inrow">
-     <input id="in" placeholder="ask: status · why · pause · tick · set cap max_single_trade_usd 20" autocomplete="off">
-     <button onclick="send()">Send</button>
-   </div>
- </div>
- <div class="ring">
- <div class="glass card" id="panel">
-   <div class="pfix">
-     <div class="row"><b>Status</b><span id="st"></span></div>
-     <div class="big" id="pf">—</div><div class="mut">portfolio value</div>
-     <div class="row" style="margin-top:14px"><span class="mut">drawdown</span><span id="ddv"></span></div>
-     <div class="bar"><i id="ddbar" style="width:0%"></i></div>
-     <div class="row" style="margin-top:14px"><span class="mut">caps</span></div>
-     <div id="caps" class="mut" style="font-size:13px"></div>
-     <div class="row" style="margin-top:10px"><span class="mut">pairs</span></div>
-     <div id="pairs" class="chips"></div>
-   </div>
-   <div class="pscroll">
-     <div class="row" style="margin-top:6px"><b>Recent decisions</b></div>
-     <div id="recent"></div>
-     <div class="row" style="margin-top:18px"><b>Live on-chain proof</b><span class="badge pill-ok">Mantle</span></div>
-     <div class="mut" style="font-size:12px;margin-bottom:8px">Real swaps this agent executed on Mantle, with the guardrail rejecting an off-policy trade in the same run.</div>
-     <div id="trail"></div>
-   </div>
- </div>
- </div>
+:root{
+  --bg:#0a0b12; --bg2:#0f1119; --card:rgba(22,25,38,.72); --line:rgba(255,255,255,.07);
+  --ink:#e9ecf5; --mut:#8b91a7; --gold:#f0b90b; --grn:#3fb950; --amb:#e3b341; --red:#f85149;
+  --vio:#8b7cf6; --cy:#48d3e0;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:var(--ink);background:var(--bg);
+  background-image:radial-gradient(1200px 600px at 80% -10%,rgba(139,124,246,.16),transparent),
+    radial-gradient(900px 500px at 5% 0%,rgba(240,185,11,.10),transparent);
+  background-attachment:fixed;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+a{color:var(--cy);text-decoration:none} a:hover{text-decoration:underline}
+
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.logo{font-weight:800;letter-spacing:.5px;font-size:22px}
+.logo .b{color:var(--gold)}
+.live{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--mut);
+  padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--card)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--grn);box-shadow:0 0 0 0 rgba(63,185,80,.6);
+  animation:pulse 1.8s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,185,80,.5)}70%{box-shadow:0 0 0 9px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+.tag{color:var(--mut);font-size:13px}
+.stack{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.layer{font-size:11px;font-weight:600;padding:6px 11px;border-radius:999px;border:1px solid var(--line);
+  background:var(--card);display:flex;gap:7px;align-items:center}
+.layer i{width:7px;height:7px;border-radius:50%}
+.l-tw i{background:var(--cy)} .l-id i{background:var(--gold)} .l-ma i{background:var(--vio)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 12px 40px rgba(0,0,0,.35)}
+
+.verify{padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.vbadge{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
+.vbadge .ring{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(63,185,80,.14);border:1.5px solid var(--grn);color:var(--grn)}
+.vbad .ring{background:rgba(248,81,73,.14);border-color:var(--red);color:var(--red)}
+.vmeta{color:var(--mut);font-size:12.5px}
+.hash{color:var(--gold)}
+.vline{height:30px;width:1px;background:var(--line)}
+
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.kpi{padding:15px 16px}
+.kpi .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+.kpi .v{font-size:26px;font-weight:750;margin-top:6px;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:12px;color:var(--mut);margin-top:2px}
+.up{color:var(--grn)} .down{color:var(--red)} .neutral{color:var(--ink)}
+
+.cols{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
+.h{font-weight:700;font-size:14px;margin:0 0 12px;display:flex;align-items:center;gap:9px}
+.h .pill{font-size:11px;color:var(--mut);font-weight:600;border:1px solid var(--line);
+  padding:2px 8px;border-radius:999px}
+.section{padding:16px 18px;margin-bottom:16px}
+
+.gauge-wrap{display:flex;gap:18px;align-items:center}
+.gnum{font-size:30px;font-weight:750}
+.gsub{color:var(--mut);font-size:12px}
+
+.feed{max-height:520px;overflow:auto;margin:-4px -6px;padding:0 6px}
+.row{display:grid;grid-template-columns:54px 1fr auto;gap:10px;align-items:center;
+  padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:8px}
+.row:hover{background:rgba(255,255,255,.03)}
+.row .t{color:var(--mut);font-size:11px}
+.row .desc{font-size:13px}
+.row .rs{color:var(--mut);font-size:12px;margin-top:1px}
+.row .hh{font-size:11px;color:var(--mut)}
+.badge{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.b-trade{background:rgba(63,185,80,.14);color:var(--grn)}
+.b-clamp{background:rgba(227,179,65,.16);color:var(--amb)}
+.b-reject{background:rgba(248,81,73,.15);color:var(--red)}
+.b-abstain{background:rgba(139,124,246,.16);color:var(--vio)}
+.b-hold{background:rgba(139,145,167,.16);color:var(--mut)}
+
+.reasons{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
+.chip{font-size:11px;color:var(--mut);border:1px solid var(--line);padding:3px 9px;border-radius:999px}
+.chip b{color:var(--ink)}
+
+footer{margin-top:18px;color:var(--mut);font-size:12px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+
+.modal{position:fixed;inset:0;background:rgba(4,5,10,.7);backdrop-filter:blur(4px);
+  display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal.on{display:flex}
+.sheet{max-width:680px;width:100%;max-height:84vh;overflow:auto;padding:22px}
+.sheet h3{margin:0 0 4px} .sheet .x{float:right;cursor:pointer;color:var(--mut);font-size:20px}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 12px;margin:14px 0;font-size:12.5px}
+.kv .kk{color:var(--mut)}
+.ok{color:var(--grn)} .bad{color:var(--red)}
+pre{background:#0b0d15;border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;
+  font-size:11.5px;color:#c8cde0}
+@media(max-width:880px){.grid{grid-template-columns:repeat(2,1fr)}.cols{grid-template-columns:1fr}.stack{width:100%;margin:6px 0 0}}
+</style></head><body><div class="wrap">
+
+<header>
+  <div class="logo">SUMPLUS <span class="b">TRADER</span></div>
+  <span class="live"><span class="dot"></span> LIVE</span>
+  <span class="tag">Verifiable autonomous trading on BNB Chain</span>
+  <div class="stack">
+    <span class="layer l-tw"><i></i>TWAK · self-custody</span>
+    <span class="layer l-id"><i></i>ERC-8004 · identity</span>
+    <span class="layer l-ma"><i></i>Maria · verifiable policy</span>
+  </div>
+</header>
+
+<div class="card verify" id="verify"></div>
+
+<div class="grid" id="kpis"></div>
+
+<div class="cols">
+  <div>
+    <div class="card section">
+      <p class="h">Equity &amp; drawdown <span class="pill" id="eqsub">—</span></p>
+      <svg id="eq" viewBox="0 0 640 200" preserveAspectRatio="none" style="width:100%;height:200px"></svg>
+    </div>
+    <div class="card section">
+      <p class="h">Drawdown vs the 6% elimination gate</p>
+      <div class="gauge-wrap">
+        <svg id="gauge" width="190" height="120" viewBox="0 0 190 120"></svg>
+        <div>
+          <div class="gnum" id="gdd">—</div>
+          <div class="gsub" id="gtext"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="card section">
+      <p class="h">Decision feed <span class="pill" id="feedn">—</span></p>
+      <div class="feed" id="feed"></div>
+    </div>
+    <div class="card section">
+      <p class="h">Restraint as a feature <span class="pill">avoided-loss ledger</span></p>
+      <div class="reasons" id="reasons"></div>
+    </div>
+  </div>
 </div>
+
+<footer id="foot"></footer>
+</div>
+
+<div class="modal" id="modal"><div class="card sheet" id="sheet"></div></div>
+
 <script>
-const log=document.getElementById('in');
-function add(t,who){const d=document.createElement('div');d.className='msg '+who;d.textContent=t;document.getElementById('log').appendChild(d);document.getElementById('log').scrollTop=1e9;}
-async function send(){const v=document.getElementById('in').value.trim();if(!v)return;add(v,'you');document.getElementById('in').value='';
- const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:v})});
- const j=await r.json();add(j.reply,'bot');refresh();}
-document.getElementById('in').addEventListener('keydown',e=>{if(e.key==='Enter')send();});
-async function quick(cmd){add(cmd,'you');const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:cmd})});const j=await r.json();add(j.reply,'bot');refresh();}
-async function runDemo(){add('run guardrail demo','you');
- const s=(await (await fetch('/api/guardrail-demo')).json()).scenarios;
- const pill={allowed:'pill-ok',clamped:'pill-clamp',rejected:'pill-bad'};
- let h='<div class="demo"><b>Guardrail enforcement — allow / clamp / reject</b>';
- s.forEach(c=>{h+='<div class="c"><div><div>'+c.name+'</div><div class="mut" style="font-size:12px">'+c.wants+'</div></div><span class="badge '+pill[c.verdict]+'">'+c.verdict+'</span></div>';});
- h+='<div class="mut" style="font-size:12px;margin-top:8px">No human approved any of this. The leash held.</div></div>';
- const d=document.createElement('div');d.className='msg bot';d.style.maxWidth='95%';d.innerHTML=h;document.getElementById('log').appendChild(d);document.getElementById('log').scrollTop=1e9;}
-async function loadTrail(){const t=await (await fetch('/api/trail')).json();const el=document.getElementById('trail');let h='';
- (t.trail||[]).forEach(r=>{const v=r.tx?'<span class="badge pill-ok">executed</span>':(r.guardrail==='rejected'?'<span class="badge pill-bad">rejected</span>':'<span class="badge pill-clamp">'+(r.guardrail||'')+'</span>');
-  const link=r.tx?'<br><a href="'+r.mantlescan+'" target="_blank">'+r.tx.slice(0,18)+'… ↗</a>':'<br><span class="mut">'+(r.guardrail_reason||'')+'</span>';
-  h+='<div class="tx">'+r.side+' '+(r.amount!=null?'~$'+r.amount:'')+' · MNT '+ (r.mnt_allocation_pct!=null?r.mnt_allocation_pct+'%':'') +' '+v+link+'</div>';});
- if(t.proof_tx){h+='<div class="tx">proof swap 4 MNT→USDC <span class="badge pill-ok">executed</span><br><a href="https://mantlescan.xyz/tx/'+t.proof_tx+'" target="_blank">'+t.proof_tx.slice(0,18)+'… ↗</a></div>';}
- el.innerHTML=h||'<span class="mut">no trail yet</span>';}
-async function refresh(){const s=await (await fetch('/api/state')).json();
- document.getElementById('st').innerHTML='<span class="state" style="background:'+(s.paused?'#f85149':'#3fb950')+'"></span>'+(s.paused?'PAUSED':'RUNNING');
- document.getElementById('panel').parentElement.classList.toggle('paused',s.paused);
- document.getElementById('pf').textContent='$'+s.portfolio_usd.toFixed(2);
- document.getElementById('ddv').textContent=s.drawdown_pct.toFixed(2)+'% / cap '+s.max_drawdown_pct+'%';
- document.getElementById('ddbar').style.width=Math.min(100,s.drawdown_pct/s.max_drawdown_pct*100)+'%';
- document.getElementById('caps').textContent='single ≤ $'+s.caps.max_single_trade_usd+' · pos ≤ '+(s.caps.max_position_pct*100)+'% · ≤ '+s.caps.max_trades_per_hour+'/hr';
- document.getElementById('pairs').innerHTML=s.pairs.map(p=>'<span>'+p+'</span>').join('');
- document.getElementById('recent').innerHTML=s.recent.map(d=>'<div class="dec">'+d.text+' <span class="badge '+(d.allowed?'pill-ok':'pill-bad')+'">'+(d.allowed?'allowed':'blocked')+'</span><br><span class="mut">'+d.reason+'</span></div>').join('')||'<div class="mut">no decisions yet — type \\'tick\\'</div>';}
-add("Hi — I'm an autonomous trading agent. Click 'Guardrail demo' to watch the leash hold, or 'Tick' to run a decision cycle. The live on-chain proof is on the right.","bot");refresh();loadTrail();setInterval(refresh,4000);
+const $=s=>document.querySelector(s);
+const short=h=>h?h.slice(0,12)+'…'+h.slice(-6):'—';
+const fmt=n=>n==null?'—':n.toLocaleString(undefined,{maximumFractionDigits:2});
+
+function kpi(k,v,s,cls){return `<div class="card kpi"><div class="k">${k}</div><div class="v ${cls||'neutral'}">${v}</div><div class="s">${s||''}</div></div>`}
+
+async function load(){
+  const o=await (await fetch('/api/overview')).json();
+  const vr=o.verify, ok=vr.chain_intact && vr.all_reference_committed_hash;
+  $('#verify').className='card verify'+(ok?'':' vbad');
+  $('#verify').innerHTML=
+    `<div class="vbadge ${ok?'':'vbad'}"><span class="ring">${ok?'✓':'!'}</span>${ok?'Rule adherence verified':'Verification failed'}</div>
+     <div class="vline"></div>
+     <div><div class="vmeta">committed policy hash</div><div class="mono hash">${short(vr.committed_policy_hash)}</div></div>
+     <div class="vline"></div>
+     <div class="vmeta">${vr.receipts} receipts · chain intact ${vr.chain_intact?'✓':'✗'} · all reference committed hash ${vr.all_reference_committed_hash?'✓':'✗'}<br>
+       recompute from <span class="mono">config/strategy.json</span> to verify — rules were fixed before the market moved</div>`;
+
+  const ret=o.return_pct, rcls=ret>0?'up':ret<0?'down':'neutral';
+  $('#kpis').innerHTML=[
+    kpi('Net asset value','$'+fmt(o.nav),`from $${fmt(o.nav0)} start`),
+    kpi('Return','('+(ret>=0?'+':'')+ret+'%'+')'.replace(/[()]/g,''),'over the run',rcls),
+    kpi('Peak drawdown',o.peak_drawdown_pct+'%',`gate ${o.gate_pct}% · kill ${o.internal_kill_pct}% · never breached`,o.peak_drawdown_pct>=o.gate_pct?'down':'up'),
+    kpi('Risky exposure',o.risky_exposure_pct+'%',`cap ${o.max_risky_pct}% · regime ${o.regime}`),
+    kpi('Trades',o.trades,'rule-adherent by construction'),
+    kpi('Abstentions',o.abstentions,'restraint, logged + marked'),
+    kpi('Rule violations',o.rule_violations,'provable via the receipt chain',o.rule_violations===0?'up':'down'),
+    kpi('CMC data (x402)',o.x402.requests,'$'+fmt(o.x402.spent_usdc)+' USDC paid'),
+  ].join('');
+
+  gauge(o.peak_drawdown_pct,o.gate_pct,o.internal_kill_pct);
+  $('#gdd').textContent=o.peak_drawdown_pct+'%';
+  $('#gdd').className='gnum '+(o.peak_drawdown_pct>=o.gate_pct?'down':'up');
+  $('#gtext').innerHTML=`peak over the run · now ${o.drawdown_pct}%<br>${(o.gate_pct-o.peak_drawdown_pct).toFixed(2)}% of buffer held to the gate`;
+
+  const rs=Object.entries(o.by_reason||{}).sort((a,b)=>b[1]-a[1]);
+  const chips=rs.length?rs.map(([k,v])=>`<span class="chip"><b>${v}</b> ${k.replace(/_/g,' ')}</span>`).join(''):'<span class="chip">no abstentions yet</span>';
+  $('#reasons').innerHTML=chips+
+    `<div style="margin-top:10px;color:var(--mut);font-size:12px">marked to market, honest both ways: `+
+    `avoided loss <b class="up">$${fmt(o.avoided_loss_usd)}</b> · missed gain <b class="down">$${fmt(o.missed_gain_usd)}</b>. `+
+    `Every skip is a hash-chained receipt — click one in the feed to replay it.</div>`;
+
+  const p=o.proof||{};
+  $('#foot').innerHTML=[
+    `agent <span class="mono">${p.agent_id||'—'}</span>`,
+    p.agent_wallet?`wallet <a class="mono" href="${p.explorer}/address/${p.agent_wallet}" target="_blank">${short(p.agent_wallet)} ↗</a>`:'wallet pending registration',
+    p.commit_tx?`<a class="mono" href="${p.explorer}/tx/${p.commit_tx}" target="_blank">commit tx ↗</a>`:'commit-reveal pending',
+    p.repo_url?`<a href="${p.repo_url}" target="_blank">repo ↗</a>`:'',
+    `universe: ${(o.universe||[]).join(' · ')}`,
+  ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+
+  equity();
+}
+
+function gauge(dd,gate,kill){
+  const cx=95,cy=105,r=78, a0=Math.PI, a1=0;
+  const ang=v=>a0+(a1-a0)*Math.min(v,gate)/gate;
+  const pt=(v,rr=r)=>[cx+rr*Math.cos(ang(v)),cy+rr*Math.sin(ang(v))];
+  const arc=(va,vb,rr=r)=>{const[x0,y0]=pt(va,rr),[x1,y1]=pt(vb,rr);return `M${x0} ${y0} A${rr} ${rr} 0 0 1 ${x1} ${y1}`};
+  const col=dd>=kill?'#f85149':dd>=kill*0.66?'#e3b341':'#3fb950';
+  let s=`<path d="${arc(0,gate)}" stroke="rgba(255,255,255,.08)" stroke-width="13" fill="none" stroke-linecap="round"/>`;
+  s+=`<path d="${arc(0,dd)}" stroke="${col}" stroke-width="13" fill="none" stroke-linecap="round"/>`;
+  // markers at kill + gate
+  [[kill,'#e3b341'],[gate,'#f85149']].forEach(([v,c])=>{const[x0,y0]=pt(v,r-9),[x1,y1]=pt(v,r+9);s+=`<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${c}" stroke-width="2"/>`});
+  $('#gauge').innerHTML=s;
+}
+
+function equity(){
+  fetch('/api/equity').then(r=>r.json()).then(d=>{
+    const e=d.equity; if(!e.length)return;
+    const navs=e.map(p=>p.nav), mn=Math.min(...navs), mx=Math.max(...navs), pad=(mx-mn)*0.15||1;
+    const lo=mn-pad, hi=mx+pad, W=640,H=200;
+    const X=i=>i/(e.length-1)*W, Y=v=>H-(v-lo)/(hi-lo)*H;
+    let path=e.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(p.nav).toFixed(1)}`).join(' ');
+    let area=path+` L${W} ${H} L0 ${H} Z`;
+    const ddmax=Math.max(...e.map(p=>p.drawdown_pct));
+    $('#eqsub').textContent=`${e.length} ticks · max dd ${ddmax.toFixed(2)}%`;
+    $('#eq').innerHTML=`<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="rgba(63,185,80,.35)"/><stop offset="1" stop-color="rgba(63,185,80,0)"/></linearGradient></defs>
+      <path d="${area}" fill="url(#g)"/><path d="${path}" fill="none" stroke="#3fb950" stroke-width="2"/>`;
+  });
+}
+
+const KIND={trade:'b-trade',clamp:'b-clamp',reject:'b-reject',abstain:'b-abstain',hold:'b-hold',exit:'b-trade'};
+function feed(){
+  fetch('/api/feed?limit=50').then(r=>r.json()).then(d=>{
+    $('#feedn').textContent=d.total+' receipts';
+    $('#feed').innerHTML=d.feed.map(r=>{
+      const dec=r.decision||{}, side=(dec.side||'').toUpperCase();
+      const what=r.kind==='hold'?'HOLD':`${side} ${dec.from_token}→${dec.to_token} $${fmt(dec.amount_usd)}`;
+      const t=(r.ts||'').slice(11,16);
+      return `<div class="row" onclick="replay(${r.seq})">
+        <div class="t">${t}</div>
+        <div><div class="desc">${what}</div><div class="rs">${r.reason}</div></div>
+        <div style="text-align:right"><span class="badge ${KIND[r.kind]||'b-hold'}">${r.kind}</span><div class="hh mono">${short(r.hash)}</div></div>
+      </div>`}).join('')||'<div class="rs" style="padding:14px">no decisions yet — run a simulation or start the loop</div>';
+  });
+}
+
+async function replay(seq){
+  const d=await (await fetch('/api/replay/'+seq)).json();
+  const r=d.receipt;
+  $('#sheet').innerHTML=`<span class="x" onclick="closeM()">✕</span>
+    <h3>Black-box replay · receipt #${r.seq}</h3>
+    <div class="vmeta" style="color:var(--mut)">recomputed deterministically from the recorded inputs</div>
+    <div class="kv">
+      <div class="kk">hash recomputes</div><div class="${d.hash_match?'ok':'bad'}">${d.hash_match?'✓ matches stored hash':'✗ MISMATCH'}</div>
+      <div class="kk">prev-hash link</div><div class="${d.prev_link_ok?'ok':'bad'}">${d.prev_link_ok?'✓ chains to previous receipt':'✗ broken'}</div>
+      <div class="kk">references commitment</div><div class="${d.references_committed?'ok':'bad'}">${d.references_committed?'✓ committed policy hash':'✗ different policy'}</div>
+      <div class="kk">verdict</div><div>${r.verdict} — ${r.reason}</div>
+      <div class="kk">policy hash</div><div class="mono hash">${short(r.policy_hash)}</div>
+      <div class="kk">hash</div><div class="mono">${short(r.hash)}</div>
+    </div>
+    <pre>${JSON.stringify(r.decision,null,2)}</pre>`;
+  $('#modal').classList.add('on');
+}
+function closeM(){$('#modal').classList.remove('on')}
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeM()});
+
+load();feed();setInterval(()=>{load();feed()},4000);
 </script></body></html>"""

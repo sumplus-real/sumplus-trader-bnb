@@ -1,0 +1,12 @@
+# Render Blueprint — one-click deploy of the verifiable-trading dashboard.
+# Connect this public repo in the Render dashboard (New > Blueprint) and it builds
+# the Dockerfile, injects $PORT, and serves the dashboard at a public URL.
+# Committed demo data renders immediately; live receipts append into the same URL.
+services:
+  - type: web
+    name: sumplus-trader-bnb
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true

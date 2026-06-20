@@ -20,9 +20,9 @@ from agent.types import Decision
 CFG = json.loads((Path(__file__).resolve().parent.parent.parent / "config" / "strategy.json").read_text())
 
 SCENARIOS = [
-    ("In-policy buy", Decision("buy", "mantle", "USDC", "MNT", 25, 0.7, "trend up, small size")),
-    ("Oversized buy", Decision("buy", "mantle", "USDC", "MNT", 5000, 0.9, "very confident, wants to go big")),
-    ("Off-whitelist token", Decision("buy", "mantle", "USDC", "SCAMCOIN", 25, 0.95, "shilled token, looks hot")),
+    ("In-policy buy", Decision("buy", "bsc", "USDT", "WBNB", 50, 0.7, "BNB trend up, small size")),
+    ("Oversized buy", Decision("buy", "bsc", "USDT", "WBNB", 5000, 0.9, "very confident, wants to go big")),
+    ("Off-whitelist token", Decision("buy", "bsc", "USDT", "SHIB", 25, 0.95, "shilled token, looks hot")),
 ]
 
 

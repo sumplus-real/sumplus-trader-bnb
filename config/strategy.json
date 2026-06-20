@@ -1,5 +1,6 @@
 {
-  "_comment": "BNB Hack: AI Trading Agent (Track 1) config. Live PnL on BSC (chain 56) over 6/22-28, ranked by total return with a max-drawdown gate (breach = elimination), a minimum trade count, and simulated transaction costs. The brain proposes; these deterministic caps clamp. Same caps are also enforced server-side by the execution layer's delegation policy.",
+  "_comment": "CANONICAL COMMITTED POLICY. Its SHA-256 (over this file, canonicalised: sorted keys, no whitespace, keys starting with _ stripped) is published to the agent's ERC-8004 identity BEFORE code-lock. Every live decision receipt references that hash. BNB Hack Track 1: live PnL on BSC (chain 56) 6/22-28, judged on returns + drawdown + risk-adjusted + rule adherence, 6% max-drawdown elimination gate. Survival-first.",
+  "version": "bnb-1.0.0",
 
   "mode": "paper",
 
@@ -8,23 +9,88 @@
     "mantle": { "chain_id": 5000, "enabled": false }
   },
 
+  "universe": ["WBNB", "BTCB", "ETH", "CAKE"],
+  "quote_tokens": ["USDT", "USDC"],
+  "allowed_tokens": ["USDT", "USDC", "WBNB", "BTCB", "ETH", "CAKE"],
   "allowed_pairs": [
     { "chain": "bsc", "from": "USDT", "to": "WBNB" },
-    { "chain": "bsc", "from": "WBNB", "to": "USDT" }
+    { "chain": "bsc", "from": "WBNB", "to": "USDT" },
+    { "chain": "bsc", "from": "USDT", "to": "BTCB" },
+    { "chain": "bsc", "from": "BTCB", "to": "USDT" },
+    { "chain": "bsc", "from": "USDT", "to": "ETH" },
+    { "chain": "bsc", "from": "ETH", "to": "USDT" },
+    { "chain": "bsc", "from": "USDT", "to": "CAKE" },
+    { "chain": "bsc", "from": "CAKE", "to": "USDT" }
   ],
 
-  "allowed_tokens": ["USDT", "USDC", "WBNB", "BNB", "BTCB"],
+  "trending": {
+    "enabled": true,
+    "max_extra_tokens": 3,
+    "min_liquidity_usd": 2000000,
+    "max_spread_bps": 80,
+    "_comment": "CMC-trending names admitted only if they pass these filters at decision time; else abstain."
+  },
+
+  "signal": {
+    "momentum_lookbacks_h": [1, 4],
+    "require_momentum_agreement": true,
+    "vol_enter_max_pct": 4.0,
+    "vol_window_h": 24,
+    "_comment": "Take risk only when 1h and 4h momentum agree in sign AND realized vol < vol_enter_max."
+  },
 
   "risk": {
+    "max_single_trade_pct": 0.025,
+    "min_single_trade_pct": 0.01,
     "max_single_trade_usd": 100,
-    "max_position_pct": 0.50,
-    "max_trades_per_hour": 6,
+    "max_position_pct": 0.40,
+    "max_risky_exposure_pct": 0.12,
+    "max_trades_per_hour": 4,
+    "min_trade_interval_seconds": 900,
+    "default_slippage_bps": 50,
+    "max_slippage_bps": 120,
+    "stop_loss_pct": 2.0,
+    "take_profit_pct": 4.0,
+    "max_hold_hours": 48,
     "max_drawdown_pct": 6.0,
-    "min_trade_interval_seconds": 300,
-    "default_slippage_bps": 50
+    "_comment": "max_drawdown_pct is the competition elimination gate. Risky exposure is capped low (12%) so even a deep crash of the whole risky sleeve stays inside the gate; the ladder de-risks earlier still."
+  },
+
+  "drawdown_ladder": [
+    { "at_pct": 1.0, "action": "halve_size" },
+    { "at_pct": 2.0, "action": "no_new_risk" },
+    { "at_pct": 3.0, "action": "stablecoin_mode" }
+  ],
+  "internal_hard_kill_pct": 3.0,
+
+  "min_trades": {
+    "target_count_per_week": 12,
+    "micro_rebalance_usd": 12,
+    "target_risky_ratio": 0.10,
+    "rebalance_band": 0.04,
+    "_comment": "Scheduled tiny in-policy rebalances guarantee the minimum qualifying trade count without overtrading."
+  },
+
+  "data": {
+    "source": "cmc_mcp",
+    "max_data_age_seconds": 600,
+    "x402_receipts": true,
+    "_comment": "CMC MCP is the only market-data source; stale data (age > max_data_age_seconds) blocks trading."
+  },
+
+  "ops": {
+    "rpc_endpoints": [
+      "https://bsc-dataseed.bnbchain.org",
+      "https://bsc-dataseed1.defibit.io",
+      "https://bsc-dataseed1.ninicoin.io",
+      "https://rpc.ankr.com/bsc"
+    ],
+    "reconcile_interval_seconds": 1800,
+    "heartbeat_seconds": 120,
+    "fail_closed": true
   },
 
   "loop": {
-    "tick_seconds": 600
+    "tick_seconds": 1800
   }
 }

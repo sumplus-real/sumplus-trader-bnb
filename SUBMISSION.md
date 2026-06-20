@@ -1,122 +1,118 @@
-# Submission — Mantle Turing Test Hackathon 2026
+# Sumplus Trader — BNB Hack: AI Trading Agent Edition
 
-> Project: **Sumplus Trader**. Tracks: **Trading & Strategy** + **Agentic Economy**.
+> A self-custody AI trader on BSC that can **explain, prove, and constrain every dollar of risk**
+> while running unattended for a week. The flight recorder and kill-switch standard for
+> autonomous on-chain finance.
 
-## One-liner
+Tracks: **Track 1** (Autonomous Trading Agents, live) + **Track 2** (Strategy research).
 
-An autonomous on-chain trading agent that decides and executes entirely on its own, yet is
-structurally incapable of exceeding its leash.
+---
 
-## The problem
+## The one idea
 
-Most "AI trading agent" demos are a bot with a hot private key and a prompt. They can trade, but
-nothing stops them from going all-in, chasing a shilled token, or blowing past a drawdown. The
-thing standing between an autonomous agent and the chain is exactly what nobody shows. That trust
-gap is why autonomous on-chain agents are not taken seriously yet.
+Every team will put a strategy on Trust Wallet Agent Kit and hope the week goes their way. We do
+that too — but the agent is the easy part. The hard part, the part nobody shows, is *proving* an
+autonomous agent stayed inside its mandate when no human was watching. That is our product
+(Sumplus: verifiable financial infrastructure for AI agents), and it is exactly what this
+hackathon exists to make real.
 
-## What we built
+So before the market opens we **commit our policy on-chain**, and every decision the agent makes
+for a week is a hash-chained receipt that references that commitment. Afterwards, anyone
+recomputes the hash from this repo and verifies the agent obeyed rules fixed *before* the market
+moved. "Rule adherence" stops being a claim and becomes a proof.
 
-A trading agent split into honest layers:
+## Three-layer trust stack (one flex per host)
 
-- **Brain** — a DeepSeek-driven strategy that reads a market snapshot and proposes one decision
-  (buy / sell / hold, pair, size, rationale). The strategy harness is ours; the model is the engine.
-- **Guardrail** — a deterministic policy layer that allows, clamps, or hard-rejects every decision
-  against a whitelist, size caps, a drawdown circuit-breaker, and a rate limit.
-- **Secure execution** — approved trades route to a separate execution layer (Maria) that enforces
-  the same policy server-side, signs with a server wallet, and broadcasts the swap.
-- **DEX routing** — on Mantle the swap is routed through Agni Finance (chain 5000) via our Arsenal
-  routing layer.
-- **Conversational surface** — a built-in web chat: a user can ask the agent its status, ask why it
-  made a decision, and pause / resume / adjust caps in plain language. No human approves trades; the
-  human supervises.
+| Layer | What | Host it speaks to |
+|---|---|---|
+| Self-custody signing | **Trust Wallet Agent Kit** — keys stay local, registration, x402 | Trust Wallet |
+| Self-sovereign identity | **ERC-8004** agent identity + **commit-reveal** of the policy hash | BNB Chain |
+| Verifiable decision trail | **Maria** — hash-chained receipts proving every decision obeyed the committed policy | Sumplus |
+| Data provenance | **CoinMarketCap MCP** is the *only* market-data source; **x402** receipts logged as paid-data provenance | CoinMarketCap |
 
-The pitch is not "look at my returns." It is **safe autonomy** — the agent runs by itself, and the
-leash holds. Defence in depth: the guardrail self-limits the brain, and the execution layer enforces
-the same policy independently, so the safety property does not depend on the model behaving.
+## How it trades — survival first
 
-**Who holds the leash:** the user does. The delegating user sets the policy — which pairs, the
-per-trade and drawdown caps, the allocation target — and issues an on-chain delegation that binds it
-server-side. The agent then acts autonomously inside that envelope. Two independent layers enforce
-it: our guardrail in the agent, and the execution layer's delegation check before it ever signs. In
-our live run the brain mis-judged and tried to add exposure; both the policy and the leash held and
-the trade never reached the chain.
+The competition eliminates any agent that breaches ~6% drawdown, and scores risk-adjusted return
++ rule adherence. The winning move is not to gamble for the highest return; it is to **never be
+eliminated** while staying disciplined. The strategy (committed in `config/strategy.json`):
 
-## Why it fits the tracks
+- Long-only spot in a small, liquid universe (WBNB, BTCB, ETH, CAKE vs USDT/USDC) on PancakeSwap.
+- Enter only when 1h and 4h momentum **agree** and realized volatility is low; otherwise hold.
+- Risky exposure capped at 12%, sizes 1–2.5% of NAV, volatility-scaled.
+- A drawdown ladder that de-risks *earlier* than the gate: halve at 1%, no-new-risk at 2%,
+  flatten to stablecoins at 3% — a 3-point buffer under the 6% elimination line.
+- Scheduled micro-rebalances guarantee the minimum trade count without overtrading.
+- **Abstention is first-class**: every skip is a reasoned, hash-chained receipt, marked to
+  market later (the avoided-loss ledger). The agent proves judgement by knowing when *not* to act.
 
-- **Trading & Strategy** — a real strategy engine deciding and executing spot swaps on Mantle, with
-  risk management (drawdown breaker, position caps) built into the trade path, not bolted on.
-- **Agentic Economy** — an autonomous agent that acts on-chain under a delegated, enforceable policy.
-  This is what makes agent-driven on-chain activity safe enough to scale.
+**Stress test (6 weeks, calm → chop → crash → recovery, `python -m agent.simulate 6`):** the
+committed strategy survives a severe crash with a **peak drawdown of ~2.8–3.7%, never breaching
+the 6% gate**, with a fully intact, verifiable receipt chain.
 
-## Deployed on Mantle — live autonomous run
+## Track 2 — survival beats return-chasing (backtest)
 
-The agent ran live on Mantle (chain 5000), driven by DeepSeek V4 under a target-allocation
-rebalancing mandate, executing real swaps through Agni Finance. Every decision is logged in
-`ledger.jsonl` and summarised in `live_trail_summary.json` — an immutable on-chain decision trail.
+`python backtest/run.py` runs the live committed strategy (champion) head-to-head against a naive
+DCA baseline (challenger) over a regime-rich synthetic series:
 
-The wallet started ~78% concentrated in MNT. The agent autonomously decided to de-risk, executed
-two real rebalancing swaps that brought MNT exposure from 77.9% down to ~41%, and then, when it
-tried to over-correct by buying MNT back, the deterministic guardrail hard-rejected the off-whitelist
-pair. The leash held even when the brain wanted to act.
+- Champion: **survives** all six weeks, peak drawdown **3.93%**, finishes **+7.58%**.
+- Challenger: **eliminated at hour 564**, drawdown blows to 29% in the crash.
+- On the window where both are alive: champion Sharpe **1.67** vs challenger **0.87**, Calmar **0.47** vs **0.12**.
 
-| # | decision | MNT alloc | guardrail | on-chain tx |
-|---|----------|-----------|-----------|-------------|
-| 1 | sell ~$3.5 MNT→USDC | 77.9% | allowed | [`0x8208a9c7…`](https://mantlescan.xyz/tx/0x8208a9c72dbf7ccdd32278580017e641534887890b139cfc17748af67a2d3122) ✅ |
-| 2 | sell ~$2.9 MNT→USDC | 57.6% | allowed | [`0xa2082e72…`](https://mantlescan.xyz/tx/0xa2082e729b5b5493326b2ea7d112090bdb9e3663445120bec379a53816ad43ff) ✅ |
-| 3 | buy MNT (rebalance up) | 40.6% | **rejected** (off-whitelist pair) | — |
-
-Plus a standalone proof swap (4 MNT → 2.2344 USDC):
-[`0x889c6432…`](https://mantlescan.xyz/tx/0x889c64321833c1f27c87cacf4d455cfcdf840b14f4deaf49dab915726495cd45) ✅
-
-- **Wallet (on-chain actor):** `0x5B9687e2F0BF34BBB9e7937488a513BD82A12dD3`
-- **Router:** Agni SwapRouter `0x319B69888b0d11cEC22caA5034e25FfFBDc88421`
-
-Three real on-chain swaps, two of them autonomous risk-driven rebalances; the guardrail rejection is
-from the same live run, not a canned demo. An ERC-8004 identity ties the agent's wallet to a
-registered agent id.
+The challenger's flattering full-period return is a mirage — the gate disqualifies it before the
+recovery. Full write-up: `docs/TRACK2_RESEARCH.md`.
 
 ## Run it (no keys, no network)
 
 ```bash
-python -m agent.cli demo     # guardrail enforcement: allow / clamp / reject
-python -m agent.cli web      # web chat + live status panel  →  http://127.0.0.1:8800
-python -m agent.cli tick     # one autonomous decision cycle
+pip install -r requirements.txt
+python -m agent.cli demo        # guardrail: allow / clamp / reject
+python -m agent.cli simulate 6  # drive the real pipeline over a 6-week crash-and-recovery
+python -m agent.cli verify      # recompute the committed hash + verify the receipt chain
+python -m agent.cli web         # the dashboard → http://127.0.0.1:8800
 ```
 
-Ships with an offline mock brain and mock execution backend so anyone can run the full agent with
-nothing installed. Add keys to switch to the real DeepSeek brain and live Mantle execution.
+Ships with an offline mock brain + mock backend and a deterministic CMC scenario, so anyone can
+run the full agent and watch the verifiable trail build — no keys, no install beyond pip.
 
-## Demo script (90 seconds — entirely in the browser)
+## The dashboard
 
-Run `python -m agent.cli web` once and open `http://127.0.0.1:8800`. Everything below is clicks on
-that one page; no terminal.
+`python -m agent.cli web` — a live board sized for a judge to watch over seven days: the committed
+policy hash with a green VERIFIED badge, NAV + a drawdown gauge against the 6% gate, the equity
+curve, a streaming decision feed (trades + reasoned abstentions, each a receipt), and a
+**black-box replay** that recomputes any receipt's hash on demand to prove the trail is honest.
 
-1. Click **▶ Guardrail demo** — three decisions render: an in-policy buy is **allowed**, an oversized
-   buy is **clamped** to the cap, a shilled off-whitelist token is **rejected**. "No human approved
-   any of this. The leash held."
-2. Click **▶ Tick** — the agent makes a decision; the status panel updates (portfolio, drawdown vs
-   cap, recent decisions with allow/blocked badges). Type `set cap max_single_trade_usd 10` in the
-   box, click Tick again — the next size is clamped live. Click **Pause** — it stops opening trades.
-   Supervised autonomy in plain language.
-3. **The money shot — real on-chain proof (right panel).** The "Live on-chain proof" panel lists the
-   real swaps this agent executed on Mantle, each linking to Mantlescan. "Same agent, running live:
-   it found itself 78% concentrated in MNT, autonomously executed two real rebalancing swaps down to
-   41%, then tried to over-correct — and the guardrail rejected the off-policy trade. No human in the
-   loop. The leash held on-chain." Click a Mantlescan link to show the confirmed transaction.
+## Architecture
 
-## Tech
+```
+CMC MCP (x402 receipts) → survival strategy → Maria verifiable policy → hash-chained receipt
+                                                       │
+                                       trade ──────────┴──────── abstain → avoided-loss ledger
+                                         │
+                                  TWAK self-custody signer → PancakeSwap (BSC)
+```
 
-DeepSeek (decision) · custom guardrail · Maria secure execution layer · Arsenal DEX routing
-(Agni Finance on Mantle) · ERC-8004 identity · Python / FastAPI. Open-source agent; the execution
-and routing layers run as hosted services behind a clean API boundary.
+Two-key safety: a trade fires only if Maria (ours, verifiable) and TWAK (official, on-chain spend
+fence) both allow. TWAK is kept thin — signer + registration + x402; Maria is the decision
+authority. The live loop is ops-hardened for an unattended week: watchdog restarts, atomic
+persistent state, RPC failover, nonce management, stale-data rejection, fail-closed on doubt.
+
+## Verify our claims
+
+```bash
+python -m agent.cli verify
+# committed_policy_hash, receipts, chain_intact: true, all_reference_committed_hash: true
+python -m pytest -q          # full suite
+python backtest/run.py       # the champion-vs-challenger head-to-head
+```
+
+## On-chain (live window 6/22–28)
+
+The agent's BSC wallet is registered via `twak compete register`; the policy hash is published to
+its ERC-8004 identity before code-lock; the wallet then trades unattended on PancakeSwap. Wallet,
+identity, and commit-reveal transaction are linked from the dashboard footer and `config/proof.json`.
 
 ## Open-source boundary
 
-This repo is the agent. The execution layer (Maria) and DEX router (Arsenal) are hosted services
-behind `ExecutionBackend`; the repo ships only an API client plus an offline mock, so the full agent
-is runnable and auditable without exposing backend source.
-
-## What's next
-
-Live execution against a funded Mantle wallet; the same chain-agnostic engine extends to BSC for
-live-PnL autonomous trading.
+This repo is the agent — open and runnable. Maria (policy/verification) and Arsenal (routing) are
+hosted services behind a clean `ExecutionBackend` seam; the repo ships an API client plus an
+offline mock so the whole agent runs and is auditable without exposing backend source.

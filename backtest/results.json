@@ -1,0 +1,95 @@
+{
+  "challenger_competition_window": {
+    "calmar": 0.1217,
+    "max_drawdown_pct": 17.1453,
+    "sharpe": 0.8723,
+    "total_return_pct": 2.087
+  },
+  "challenger_elimination_hour": 564,
+  "challenger_final_nav": 13429.6508,
+  "challenger_full_period": {
+    "calmar": 1.1817,
+    "max_drawdown_pct": 29.0229,
+    "pct_time_in_market": 99.4048,
+    "sharpe": 5.3352,
+    "total_return_pct": 34.2965,
+    "trade_count": 83
+  },
+  "challenger_trade_count": 83,
+  "champion_competition_window": {
+    "calmar": 0.4653,
+    "max_drawdown_pct": 2.9164,
+    "sharpe": 1.6722,
+    "total_return_pct": 1.357
+  },
+  "champion_elimination_hour": null,
+  "champion_final_nav": 10757.6929,
+  "champion_full_period": {
+    "calmar": 1.9296,
+    "max_drawdown_pct": 3.9267,
+    "pct_time_in_market": 92.4603,
+    "sharpe": 5.8502,
+    "total_return_pct": 7.5769,
+    "trade_count": 373
+  },
+  "champion_trade_count": 373,
+  "competition_window_hours": 565,
+  "meta": {
+    "assets": [
+      "WBNB",
+      "BTCB",
+      "ETH",
+      "CAKE"
+    ],
+    "elimination_gate_dd_pct": 6.0,
+    "fee_bps": 25.0,
+    "hours": 1008,
+    "initial_nav": 10000.0,
+    "regimes": [
+      {
+        "hi": 240,
+        "lo": 0,
+        "mu": 0.0009,
+        "name": "calm_uptrend",
+        "sigma": 0.004
+      },
+      {
+        "hi": 540,
+        "lo": 240,
+        "mu": 0.0001,
+        "name": "choppy_range",
+        "sigma": 0.006
+      },
+      {
+        "hi": 732,
+        "lo": 540,
+        "mu": -0.001,
+        "name": "sharp_crash",
+        "sigma": 0.011
+      },
+      {
+        "hi": 1008,
+        "lo": 732,
+        "mu": 0.0015,
+        "name": "recovery",
+        "sigma": 0.004
+      }
+    ],
+    "seed": 20240622,
+    "slippage_bps": 30.0
+  },
+  "per_regime_max_drawdown_pct": {
+    "challenger": {
+      "calm_uptrend": 1.5759,
+      "choppy_range": 3.0772,
+      "recovery": 27.1976,
+      "sharp_crash": 29.0229
+    },
+    "champion": {
+      "calm_uptrend": 0.4871,
+      "choppy_range": 0.825,
+      "recovery": 3.9001,
+      "sharp_crash": 3.9267
+    }
+  }
+}

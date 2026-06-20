@@ -1,8 +1,14 @@
 __pycache__/
 .DS_Store
 .env
+.agentalk/
 .venv/
 *.pyc
 ledger.jsonl
 portfolio_state.json
 runtime_state.json
+live_state.json
+heartbeat.txt
+STOP
+# committed for the demo so a fresh clone shows the dashboard + passes `verify`:
+# receipts.jsonl, sim_equity.jsonl, abstentions.jsonl, x402_receipts.jsonl
