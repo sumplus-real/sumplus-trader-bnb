@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StrategySpec",
+  "description": "A complete, machine-readable, backtestable trading strategy specification emitted by the sumplus-survival-strategy Skill. Consumed unchanged by backtest/ and agent/.",
+  "type": "object",
+  "required": ["strategyspec_version", "name", "chain", "venue", "side", "universe",
+               "quote_tokens", "regime_read", "entry", "sizing", "drawdown_ladder_pct",
+               "exits", "rate_limits", "backtest"],
+  "properties": {
+    "strategyspec_version": {"type": "string"},
+    "name": {"type": "string"},
+    "thesis": {"type": "string"},
+    "chain": {"type": "string"},
+    "venue": {"type": "string"},
+    "side": {"type": "string", "enum": ["long-only-spot"]},
+    "universe": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "quote_tokens": {"type": "array", "items": {"type": "string"}},
+    "regime_read": {
+      "type": "object",
+      "required": ["regime", "fear_greed_index", "avg_momentum_4h_pct", "avg_realized_vol_pct"],
+      "properties": {
+        "regime": {"type": "string", "enum": ["risk_on", "neutral", "risk_off"]},
+        "fear_greed_index": {"type": "number", "minimum": 0, "maximum": 100},
+        "avg_momentum_4h_pct": {"type": "number"},
+        "avg_realized_vol_pct": {"type": "number"},
+        "source": {"type": "string"}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["require_momentum_agreement_1h_4h", "max_entry_vol_pct"],
+      "properties": {
+        "type": {"type": "string"},
+        "require_momentum_agreement_1h_4h": {"type": "boolean"},
+        "max_entry_vol_pct": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "sizing": {
+      "type": "object",
+      "required": ["per_trade_pct_nav", "max_risky_exposure_pct"],
+      "properties": {
+        "per_trade_pct_nav": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+        "volatility_scaled": {"type": "boolean"},
+        "max_risky_exposure_pct": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+      }
+    },
+    "drawdown_ladder_pct": {
+      "type": "object",
+      "description": "Every rung and the internal hard kill MUST sit strictly below elimination_gate_at.",
+      "required": ["halve_size_at", "no_new_risk_at", "flatten_to_stablecoin_at",
+                   "internal_hard_kill_at", "elimination_gate_at"],
+      "properties": {
+        "halve_size_at": {"type": "number"},
+        "no_new_risk_at": {"type": "number"},
+        "flatten_to_stablecoin_at": {"type": "number"},
+        "internal_hard_kill_at": {"type": "number"},
+        "elimination_gate_at": {"type": "number"}
+      }
+    },
+    "exits": {
+      "type": "object",
+      "required": ["stop_loss_pct", "take_profit_pct", "max_hold_hours"],
+      "properties": {
+        "stop_loss_pct": {"type": "number"},
+        "take_profit_pct": {"type": "number"},
+        "max_hold_hours": {"type": "number"}
+      }
+    },
+    "rate_limits": {
+      "type": "object",
+      "properties": {
+        "max_trades_per_hour": {"type": "number"},
+        "min_trade_interval_seconds": {"type": "number"}
+      }
+    },
+    "backtest": {
+      "type": "object",
+      "description": "Commands that reproduce the evidence for this spec.",
+      "properties": {
+        "synthetic": {"type": "string"},
+        "real_data": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    }
+  }
+}

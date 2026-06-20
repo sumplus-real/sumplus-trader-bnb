@@ -32,11 +32,15 @@ The whole agent runs offline with no keys: a mock brain, a mock backend, and a d
 === TRACK 1 (Autonomous Trading Agents) ===
 The live agent. Self-funded wallet on BSC, registered before the window, trading PancakeSwap unattended 6/22 to 6/28. Survival-first strategy, verifiable receipts, on-chain policy commitment. Wallet, identity, and commit-reveal transaction are linked from the dashboard and config/proof.json.
 
-=== TRACK 2 (Strategy research) ===
-A backtestable head-to-head: the live committed strategy (champion) against a naive DCA baseline (challenger) across a regime-rich synthetic series. The champion survives all six weeks at 3.93 percent peak drawdown, well inside the 6 percent gate, and finishes +7.58 percent. The challenger is eliminated in the crash at hour 564 as its drawdown blows past the gate to 29 percent. On the window where both are alive, champion Sharpe is 1.67 versus the challenger's 0.87 and champion Calmar is 0.47 versus 0.12. The challenger's flattering +34 percent full-period return is a mirage the elimination gate erases. Full write-up and reproducible code in the repo. Run: python backtest/run.py
+=== TRACK 2 (Strategy Skills) ===
+A CoinMarketCap Strategy Skill that turns market data into a backtestable StrategySpec, not a live agent. The Skill (skills/sumplus-survival-strategy/, in CMC Agent-Skill format with SKILL.md) reads regime from CoinMarketCap (fear/greed, global trend, per-asset 1h and 4h momentum and realised volatility), maps the regime to a risky-exposure budget (risk_on 12 percent, neutral 8 percent, risk_off 4 percent), and emits a StrategySpec with fixed survival mechanics: momentum-agreement entry, a 1/2/3 percent drawdown ladder, 2 percent stop, 4 percent take-profit, and a 3-point buffer under a 6 percent elimination gate. The same StrategySpec is the policy the Track 1 live agent commits on-chain and trades. Run: python skills/sumplus-survival-strategy/generate_spec.py
+
+The spec is backtestable with no edits, two ways.
+Synthetic head-to-head (python backtest/run.py): against a naive DCA baseline across a regime-rich series, the strategy survives all six weeks at 3.93 percent peak drawdown and finishes +7.58 percent, while the naive baseline is eliminated in the crash at hour 564 as its drawdown blows past the gate to 29 percent. On the window where both are alive, Sharpe is 1.67 versus 0.87 and Calmar 0.47 versus 0.12. The baseline's flattering +34 percent full-period return is a mirage the gate erases.
+Real-data validation (python backtest/real_data_live.py): the exact committed spec, run on three recent weeks of real hourly Binance data for the same universe, stayed inside the 6 percent gate every week with a worst-week peak drawdown of 0.81 percent. On the most recent week a naive DCA baseline breached the gate at 8.83 percent and was eliminated. Returns over the three trendless weeks were roughly flat, which is the design: the strategy preserves capital and sits out when there is no clean trend.
 
 === TECH USED ===
-Trust Wallet Agent Kit, CoinMarketCap MCP, ERC-8004, x402, PancakeSwap, BNB Chain (BSC), Python, FastAPI.
+Trust Wallet Agent Kit, CoinMarketCap MCP, CoinMarketCap Agent Hub Strategy Skill (StrategySpec), ERC-8004, x402, PancakeSwap, BNB Chain (BSC), Python, FastAPI.
 
 === REPO ===
 https://github.com/sumplus-real/sumplus-trader-bnb
@@ -51,4 +55,6 @@ python -m agent.cli simulate 6
 python -m agent.cli verify
 python -m agent.cli web
 python -m pytest -q
-python backtest/run.py
+python backtest/run.py                              # Track 2: synthetic head-to-head
+python backtest/real_data_live.py                   # Track 2: real-data validation, 3 recent weeks
+python skills/sumplus-survival-strategy/generate_spec.py   # Track 2: emit a StrategySpec from CMC data

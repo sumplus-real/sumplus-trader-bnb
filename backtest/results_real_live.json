@@ -1,0 +1,31 @@
+{
+  "gate_pct": 6.0,
+  "initial_nav": 500.0,
+  "source": "binance hourly, live pipeline",
+  "weeks": [
+    {
+      "breach_hour": null,
+      "breached_gate": false,
+      "max_drawdown_pct": 0.81,
+      "return_pct": -0.36,
+      "trades": 12,
+      "week": "05-30->06-06"
+    },
+    {
+      "breach_hour": null,
+      "breached_gate": false,
+      "max_drawdown_pct": 0.14,
+      "return_pct": 0.58,
+      "trades": 16,
+      "week": "06-06->06-13"
+    },
+    {
+      "breach_hour": null,
+      "breached_gate": false,
+      "max_drawdown_pct": 0.55,
+      "return_pct": 0.15,
+      "trades": 11,
+      "week": "06-13->06-20"
+    }
+  ]
+}

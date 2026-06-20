@@ -1,7 +1,7 @@
 {
   "_comment": "On-chain facts, filled in by Jakob's hands: the registered agent wallet, the ERC-8004 identity id, and the commit-reveal transaction hash. policy_hash is recomputed live from config/strategy.json by the dashboard, so it is always current.",
   "agent_id": "sumplus-trader-bnb",
-  "agent_wallet": "",
+  "agent_wallet": "0xaFf9e1C61dEA470060894f396227fabF8Bfa3157",
   "erc8004_id": "",
   "commit_tx": "",
   "explorer": "https://bscscan.com",

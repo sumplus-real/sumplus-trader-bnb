@@ -1,5 +1,11 @@
 # TRACK-2 Research: Survival-First vs Naive DCA under a Drawdown-Elimination Gate
 
+> This is the research that backs the Track 2 deliverable: a CoinMarketCap Strategy Skill
+> (`skills/sumplus-survival-strategy/`) that reads market data and emits a backtestable
+> **StrategySpec**. The numbers below are what that spec produces on the bench. Generate a spec with
+> `python skills/sumplus-survival-strategy/generate_spec.py`; reproduce the synthetic study with
+> `python backtest/run.py` and the real-data study with `python backtest/real_data_live.py`.
+
 ## Abstract
 
 We present a controlled, fully-reproducible head-to-head backtest of two
@@ -136,6 +142,34 @@ eliminated at hour 564 with a realised return of just +2.09%, disqualified
 and unable to participate in the recovery that follows. The champion, having
 re-armed after its flat-cooldown, re-enters the smooth recovery and compounds
 to +7.58%.
+
+## Real-Data Validation (three recent weeks)
+
+The synthetic study above is calibrated to be qualitatively realistic, but it is synthetic. To check
+the spec against the actual market, `backtest/real_data_live.py` runs the **exact live committed
+policy** (12% exposure cap, 1/2/3% ladder, 3% internal kill, 2% stops, driven through the real
+`agent.core.tick` pipeline) over three recent calendar weeks of **real hourly Binance closes** for
+the same universe (WBNB←BNB, BTCB←BTC, ETH, CAKE). This is the policy whose hash is committed
+on-chain, on real data, with no parameter changes.
+
+| week (UTC) | return | peak drawdown | 6% gate | trades |
+|------------|-------:|--------------:|---------|-------:|
+| 05-30 → 06-06 | -0.36% | 0.81% | survived | 12 |
+| 06-06 → 06-13 | +0.58% | 0.14% | survived | 16 |
+| 06-13 → 06-20 | +0.15% | 0.55% | survived | 11 |
+
+For contrast, a naive DCA baseline run on the most recent week returned -3.73% and **breached the 6%
+gate at hour 125** (peak drawdown 8.83%), eliminated. The survival-first policy stayed inside the
+gate every week, with a worst-week peak drawdown of 0.81%, using barely a seventh of the drawdown
+budget.
+
+Two honest readings. First, the protective machinery is not an artifact of the synthetic crash: on
+real recent data it never approaches the gate, and the naive approach that most contestants ship is
+eliminated this very week. Second, these three weeks were trendless to slightly-down, so the strategy
+mostly sat in stablecoins and finished roughly flat (about +0.4% combined). It preserved capital; it
+did not manufacture a return the market did not offer. That is the intended behaviour under a gate:
+the trade count (11–16/week) also confirms the live brain trades sparingly, unlike the reference
+champion's heavier micro-rebalancing.
 
 ## Limitations & Next Steps
 

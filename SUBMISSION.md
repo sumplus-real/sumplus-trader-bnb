@@ -50,17 +50,36 @@ number. It is to stay disciplined and never get eliminated. The strategy, commit
 committed live strategy survives a severe crash with a peak drawdown near 2.8%, well inside the 6%
 gate, and the receipt chain stays fully intact.
 
-## Track 2: survival beats return-chasing (backtest)
+## Track 2: a CMC Strategy Skill that emits a backtestable StrategySpec
 
-`python backtest/run.py` runs the live committed strategy (champion) head-to-head against a naive
-DCA baseline (challenger) over a regime-rich synthetic series:
+Track 2 ships a CoinMarketCap Strategy Skill, not a live agent. It lives in
+`skills/sumplus-survival-strategy/` in CMC Agent-Skill format (`SKILL.md` plus a runnable
+`generate_spec.py`, a `strategyspec.schema.json`, and tests). The Skill reads regime from
+CoinMarketCap (fear/greed, global trend, per-asset 1h and 4h momentum and realised volatility), maps
+the regime to a risky-exposure budget (risk_on 12%, neutral 8%, risk_off 4%), and emits a
+**StrategySpec**: a complete, machine-readable description of the survival-first strategy. That
+StrategySpec is the same policy the Track 1 agent commits on-chain and trades.
 
-- Champion: survives all six weeks, peak drawdown 3.93%, finishes +7.58%.
-- Challenger: eliminated at hour 564, drawdown blows to 29% in the crash.
-- On the window where both are alive: champion Sharpe 1.67 vs challenger 0.87, Calmar 0.47 vs 0.12.
+```bash
+python skills/sumplus-survival-strategy/generate_spec.py    # emit a StrategySpec from CMC data
+```
 
-The challenger's flattering full-period return is a mirage. The gate disqualifies it before the
-recovery ever arrives. Full write-up in `docs/TRACK2_RESEARCH.md`.
+The spec is backtestable with no edits, two ways:
+
+**Synthetic** (`python backtest/run.py`), head-to-head against a naive DCA baseline over a regime-rich series:
+- Strategy: survives all six weeks, peak drawdown 3.93%, finishes +7.58%.
+- Baseline: eliminated at hour 564, drawdown blows to 29% in the crash.
+- On the window where both are alive: Sharpe 1.67 vs 0.87, Calmar 0.47 vs 0.12. The baseline's
+  flattering full-period return is a mirage the gate erases before the recovery arrives.
+
+**Real data** (`python backtest/real_data_live.py`), the exact committed spec on three recent weeks
+of real hourly Binance data for the same universe:
+- Survived every week inside the 6% gate, worst-week peak drawdown 0.81%.
+- On the most recent week, a naive DCA baseline breached the gate at 8.83% and was eliminated.
+- Returns over the three trendless weeks were roughly flat, which is the design: preserve capital,
+  sit out when there is no clean trend.
+
+Full write-up in `docs/TRACK2_RESEARCH.md`.
 
 ## Run it (no keys, no network)
 

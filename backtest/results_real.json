@@ -1,0 +1,41 @@
+{
+  "challenger_recent_week": {
+    "breached_gate": true,
+    "max_drawdown_pct": 8.8277,
+    "return_pct": -3.7319,
+    "trades": 4,
+    "week": "06-13->06-20"
+  },
+  "gate_pct": 6.0,
+  "initial_nav": 500.0,
+  "source": "binance hourly",
+  "weeks": [
+    {
+      "breach_hour": null,
+      "breached_gate": false,
+      "max_drawdown_pct": 2.4608,
+      "return_pct": -1.2435,
+      "sharpe": -9.7099,
+      "trades": 69,
+      "week": "05-30->06-06"
+    },
+    {
+      "breach_hour": null,
+      "breached_gate": false,
+      "max_drawdown_pct": 1.5407,
+      "return_pct": -0.9498,
+      "sharpe": -7.533,
+      "trades": 75,
+      "week": "06-06->06-13"
+    },
+    {
+      "breach_hour": null,
+      "breached_gate": false,
+      "max_drawdown_pct": 1.8763,
+      "return_pct": -0.9342,
+      "sharpe": -7.1054,
+      "trades": 81,
+      "week": "06-13->06-20"
+    }
+  ]
+}

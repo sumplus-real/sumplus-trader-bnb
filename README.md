@@ -44,7 +44,8 @@ fixed CMC scenario. Add your keys and set `EXECUTION_BACKEND=twak` to trade for 
 - `agent/identity/`: ERC-8004 registration and the commit-reveal publisher
 - `agent/core.py`: the decision tick where every layer meets. `agent/simulate.py` drives a synthetic week.
 - `agent/web.py`: the dashboard. `agent/run_live.py`: the live unattended loop.
-- `backtest/`: the Track 2 head-to-head. `docs/`: BUILD_SPEC, TRACK2_RESEARCH, HUMAN_STEPS.
+- `skills/sumplus-survival-strategy/`: the Track 2 CMC Strategy Skill. Reads CMC market data, emits a backtestable StrategySpec.
+- `backtest/`: the Track 2 head-to-head plus `real_data_live.py` (the committed spec on real recent data). `docs/`: BUILD_SPEC, TRACK2_RESEARCH, HUMAN_STEPS.
 
 ## Verifiability
 

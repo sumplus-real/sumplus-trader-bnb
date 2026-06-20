@@ -1,0 +1,59 @@
+{
+  "strategyspec_version": "1.0",
+  "name": "sumplus-survival-first",
+  "thesis": "Survive a hard drawdown-elimination gate first; take return only when momentum agrees and volatility is low.",
+  "chain": "bsc",
+  "venue": "pancakeswap-v3",
+  "side": "long-only-spot",
+  "universe": [
+    "WBNB",
+    "BTCB",
+    "ETH",
+    "CAKE"
+  ],
+  "quote_tokens": [
+    "USDT",
+    "USDC"
+  ],
+  "regime_read": {
+    "regime": "neutral",
+    "fear_greed_index": 52.0,
+    "avg_momentum_4h_pct": 1.1,
+    "avg_realized_vol_pct": 3.25,
+    "source": "offline-scenario"
+  },
+  "entry": {
+    "type": "trend-following",
+    "require_momentum_agreement_1h_4h": true,
+    "max_entry_vol_pct": 4.0
+  },
+  "sizing": {
+    "per_trade_pct_nav": [
+      0.01,
+      0.025
+    ],
+    "volatility_scaled": true,
+    "max_risky_exposure_pct": 0.08
+  },
+  "drawdown_ladder_pct": {
+    "halve_size_at": 1.0,
+    "no_new_risk_at": 2.0,
+    "flatten_to_stablecoin_at": 3.0,
+    "internal_hard_kill_at": 3.0,
+    "elimination_gate_at": 6.0
+  },
+  "exits": {
+    "stop_loss_pct": 2.0,
+    "take_profit_pct": 4.0,
+    "max_hold_hours": 48
+  },
+  "rate_limits": {
+    "max_trades_per_hour": 4,
+    "min_trade_interval_seconds": 900
+  },
+  "backtest": {
+    "synthetic": "python backtest/run.py",
+    "real_data": "python backtest/real_data_live.py",
+    "note": "Both consume this spec unchanged. Real-data run: survived all 3 recent weeks inside the 6% gate; naive DCA baseline breached it."
+  }
+}
