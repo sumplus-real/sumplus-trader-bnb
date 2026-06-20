@@ -16,8 +16,8 @@ control of any kind. Both pay identical costs (25 bps fee + 30 bps slippage).
 
 The headline result, reproducible by running `python backtest/run.py` (fixed
 seed `20240622`), is decisive. The champion **survives the full six weeks with
-a 3.93% maximum drawdown** — comfortably inside both its own 4% internal
-hard-kill and the competition's 6% elimination gate — and finishes +7.58%. The
+a 3.93% maximum drawdown**, comfortably inside both its own 4% internal
+hard-kill and the competition's 6% elimination gate, and finishes +7.58%. The
 challenger is **eliminated at hour 564** when its drawdown blows through 29%
 during the crash; its attractive +34.3% full-period paper return is a mirage,
 achievable only by holding through a drawdown the competition forbids. On the
@@ -35,8 +35,8 @@ makes 8% with a 4% drawdown is strictly superior to one that makes 30% with a
 6% and never gets to keep its 30%. The naive DCA bot is seductive because its
 equity curve looks smooth and steep *in a pure uptrend*; its fatal flaw is
 having no mechanism to stop bleeding when the regime flips. The champion's
-design — multi-signal entry gate, hard exposure cap, per-position stops, and a
-layered drawdown ladder — exists to guarantee the equity curve never
+design (multi-signal entry gate, hard exposure cap, per-position stops, and a
+layered drawdown ladder) exists to guarantee the equity curve never
 approaches the gate, so whatever return it earns is actually **realisable**.
 
 ## Methodology
@@ -67,8 +67,8 @@ emits one decision at a time (the runner loops up to four times, mirroring the
 live `max_trades_per_hour`); the cascade, in priority order, is: (0) if the
 book has been fully flat for a 24h cooldown, re-baseline the internal HWM so a
 stale pre-crash peak cannot permanently lock the strategy out of the market;
-(1) if drawdown ≥ 4%, flatten to stablecoin; (2) per-position exits — 3%
-stop-loss, 4% take-profit, 48h time-stop; (3) if drawdown ≥ 3%, open no new
+(1) if drawdown ≥ 4%, flatten to stablecoin; (2) per-position exits (3%
+stop-loss, 4% take-profit, 48h time-stop); (3) if drawdown ≥ 3%, open no new
 risk; (4) new entries when 1h+4h momentum agree and realised vol < 4%, sized
 volatility-scaled in [1%, 3%] and halved on the 1.5% rung, total risky
 exposure capped at 20%; (5) a tiny $12 micro-rebalance toward a 15% risky
@@ -103,7 +103,7 @@ post-elimination paper recovery):
 | trade count            |   373    |     83     |
 
 **(B) Competition-window metrics** (both strategies alive, hours 0–564, the
-moment the challenger is eliminated — the only fair risk-adjusted comparison):
+moment the challenger is eliminated, the only fair risk-adjusted comparison):
 
 | metric                 | champion | challenger |
 |------------------------|---------:|-----------:|
@@ -129,10 +129,10 @@ momentum-agreement gate keeps it largely flat while the naive bot accumulates,
 nudging the challenger's drawdown to 3.08%. The regimes diverge violently in
 the crash: the champion's 3% stops and 3% no-new-risk rung engage during the
 gradual lead-in, and when the hour-564 cascade gaps its remaining risk through
-the stops, the realised loss is contained by the 20% exposure cap — max
-drawdown **3.93%**, survival never in doubt. The uncontrolled challenger,
+the stops, the realised loss is contained by the 20% exposure cap. Max
+drawdown is **3.93%**, survival never in doubt. The uncontrolled challenger,
 ~90% long, is driven straight through the 6% gate to a 29% drawdown. It is
-eliminated at hour 564 with a realised return of just +2.09% — disqualified,
+eliminated at hour 564 with a realised return of just +2.09%, disqualified
 and unable to participate in the recovery that follows. The champion, having
 re-armed after its flat-cooldown, re-enters the smooth recovery and compounds
 to +7.58%.
@@ -144,7 +144,7 @@ regimes are hand-calibrated to be qualitatively realistic (a
 gradual-then-cascade crash is how real liquidation events unfold) and the four
 assets share a market beta, but they are not real market data. The obvious
 next step is to re-run the identical pipeline on actual CoinMarketCap data for
-the competition window via the Agent Hub's CMC MCP — the `load_csv(path)`
+the competition window via the Agent Hub's CMC MCP. The `load_csv(path)`
 loader already exists for this. A second limitation is the hourly decision
 cadence: a truly instantaneous flash crash could gap through the hourly mark
 before any rung evaluates; the 20% exposure cap and per-position stop limit
@@ -157,8 +157,7 @@ on-chain fee assumptions warrant sensitivity analysis.
 ## Conclusion
 
 In a competition judged on returns **conditional on surviving a 6% drawdown
-gate**, capital preservation is not a conservative nicety — it is the
-prerequisite for any return to count. The champion's layered defence caps its
+gate**, capital preservation is the prerequisite for any return to count. The champion's layered defence caps its
 worst drawdown at 3.93% (2.07 points of headroom), delivers superior
 risk-adjusted return on the comparable both-alive window (Sharpe 1.67 vs 0.87,
 Calmar 0.47 vs 0.12), and finishes +7.58%. The naive challenger is eliminated

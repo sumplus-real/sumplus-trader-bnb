@@ -1,4 +1,4 @@
-SUMPLUS TRADER — BNB Hack BUIDL submission text (paste-ready)
+SUMPLUS TRADER. BNB Hack BUIDL submission text (paste-ready)
 
 === PROJECT NAME ===
 Sumplus Trader
@@ -7,10 +7,10 @@ Sumplus Trader
 A self-custody AI trader on BSC that can prove it stayed inside its mandate, running unattended for a week.
 
 === SHORT DESCRIPTION ===
-Sumplus Trader is an autonomous on-chain trading agent built on the official stack: Trust Wallet Agent Kit for self-custody signing, CoinMarketCap MCP for data, and ERC-8004 for agent identity. What makes it different is verifiability. Before the market opens, the agent publishes its policy hash on-chain. For the whole week, every decision it makes is a hash-chained receipt that references that commitment. After the window, anyone can recompute the hash from the public repo and confirm the agent obeyed rules that were fixed before the market moved. Rule adherence becomes a proof instead of a promise.
+Sumplus Trader is an autonomous on-chain trading agent built on the official stack: Trust Wallet Agent Kit for self-custody signing, CoinMarketCap MCP for data, and ERC-8004 for agent identity. The thing that sets it apart is that you can verify it. Before the market opens, the agent publishes its policy hash on-chain. For the whole week, every decision it makes is a hash-chained receipt that references that commitment. After the window closes, anyone can recompute the hash from the public repo and confirm the agent traded by rules that were fixed before the market moved. Rule adherence is something a judge can check, not something they have to take on faith.
 
 === FULL DESCRIPTION ===
-The hardest problem in autonomous on-chain trading is not the strategy. It is trust: proving an agent stayed inside its mandate when no human was watching. That is the problem Sumplus Trader solves, and it is what this hackathon exists to advance.
+In autonomous on-chain trading the strategy is rarely the hard part. The hard part is trust: proving an agent stayed inside its mandate when no human was watching. That is the problem Sumplus Trader is built to solve, and it is what this hackathon exists to advance.
 
 Three-layer trust stack:
 1. Trust Wallet Agent Kit signs every transaction with self-custody. Keys stay local. The agent is registered on-chain via twak compete register.
@@ -19,15 +19,15 @@ Three-layer trust stack:
 
 Data comes only from the CoinMarketCap MCP server, and every fetch logs an x402 receipt as paid-data provenance.
 
-How it trades: survival first. The competition eliminates any agent that breaches roughly 6 percent drawdown and scores risk-adjusted return and rule adherence. So the agent is built to never be eliminated. It takes risk only when 1h and 4h momentum agree and volatility is low, caps risky exposure at 12 percent, and runs a drawdown ladder that de-risks earlier than the gate, flattening to stablecoins at 3 percent. In a six-week stress test that includes a severe crash, the committed strategy never breaches the gate, with a peak drawdown under 4 percent and a fully intact, verifiable receipt chain.
+How it trades: survival first. The competition eliminates any agent that breaches roughly 6 percent drawdown, and it scores risk-adjusted return alongside rule adherence. So the agent is built to stay disciplined and never get eliminated. It takes risk only when 1h and 4h momentum agree and volatility is low, caps risky exposure at 12 percent, and runs a drawdown ladder that de-risks ahead of the gate, flattening to stablecoins at 3 percent. In a six-week stress test that includes a severe crash, the committed live strategy never breaches the gate, with a peak drawdown near 2.8 percent and a receipt chain that stays fully intact.
 
-Abstention is a first-class feature. The agent proves judgement by knowing when not to act. Every skip is a reasoned receipt, marked to market later in an avoided-loss ledger.
+The agent treats a decision not to trade as a real decision. Every skip is a reasoned receipt, marked to market later in an avoided-loss ledger, so restraint shows up in the record instead of disappearing.
 
 The whole thing runs unattended and is ops-hardened: a watchdog restarts the loop on any crash, state is persisted atomically so a restart resumes exactly, RPC endpoints fail over, and the agent is fail-closed, stopping trading rather than acting on stale or divergent data.
 
 A live dashboard shows the committed hash with a verified badge, NAV and a drawdown gauge against the gate, the equity curve, a streaming decision feed, and a black-box replay that recomputes any receipt's hash on demand.
 
-The whole agent runs offline with no keys: mock brain, mock backend, deterministic CoinMarketCap scenario. Judges can clone it and watch the verifiable trail build.
+The whole agent runs offline with no keys: a mock brain, a mock backend, and a deterministic CoinMarketCap scenario. Judges can clone it and watch the verifiable trail build, or just open the hosted dashboard.
 
 === TRACK 1 (Autonomous Trading Agents) ===
 The live agent. Self-funded wallet on BSC, registered before the window, trading PancakeSwap unattended 6/22 to 6/28. Survival-first strategy, verifiable receipts, on-chain policy commitment. Wallet, identity, and commit-reveal transaction are linked from the dashboard and config/proof.json.
@@ -41,8 +41,8 @@ Trust Wallet Agent Kit, CoinMarketCap MCP, ERC-8004, x402, PancakeSwap, BNB Chai
 === REPO ===
 https://github.com/sumplus-real/sumplus-trader-bnb
 
-=== DEMO VIDEO ===
-[paste YouTube link after recording]
+=== DEMO (live dashboard) ===
+[paste Render URL after deploy. It renders the offline simulation now and accrues live data into the same link during 6/22 to 6/28.]
 
 === HOW TO RUN ===
 pip install -r requirements.txt
