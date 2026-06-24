@@ -27,6 +27,15 @@ if [ -n "${TWAK_CREDENTIALS_JSON_B64:-}" ]; then
 fi
 
 # ── 2. Seed the durable data dir on first boot ──────────────────────────────────────────
+# One-time forced reseed of the live ledgers: overwrite whatever is on the volume with the
+# committed chain (used to swap demo placeholder receipts for the real live-window chain).
+# A marker file guards it so an ordinary restart never clobbers accumulated live data.
+if [ "${FORCE_RESEED:-}" = "1" ] && [ ! -f "$DATA_DIR/.reseeded" ]; then
+  for f in receipts.jsonl abstentions.jsonl x402_receipts.jsonl; do
+    [ -f "/app/$f" ] && cp "/app/$f" "$DATA_DIR/$f" && echo "[entrypoint] force-reseeded $f"
+  done
+  touch "$DATA_DIR/.reseeded"
+fi
 # Committed demo files give the dashboard something to render and let the receipt chain
 # continue from the published history. Never overwrite data already on the volume.
 for f in receipts.jsonl ledger.jsonl abstentions.jsonl x402_receipts.jsonl sim_equity.jsonl; do
