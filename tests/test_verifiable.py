@@ -72,10 +72,11 @@ def test_signal_requires_momentum_agreement():
 
 
 def test_strategy_enters_on_clean_uptrend():
-    views = [TokenView("WBNB", 600, pct_1h=0.8, pct_4h=1.4, vol_24h_pct=2.0)]
+    # ETH is a leaderboard-eligible buy target; WBNB/BTCB are no longer entered (see buy_set).
+    views = [TokenView("ETH", 3000, pct_1h=0.8, pct_4h=1.4, vol_24h_pct=2.0)]
     ps = survival.PortfolioState(nav_usd=500, stable_usd=500)
     intent = survival.decide(views, ps, CFG, now_ts=1000.0)
-    assert intent.action == "enter" and intent.to_token == "WBNB"
+    assert intent.action == "enter" and intent.to_token == "ETH"
 
 
 def test_tick_decision_is_deterministic():

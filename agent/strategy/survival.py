@@ -104,7 +104,13 @@ def decide(views: list[TokenView], portfolio: PortfolioState, cfg: dict, now_ts:
     # cash leg and must never be ranked as a buy target: a stablecoin's noise momentum can
     # otherwise read as "risk_on" and yield a nonsensical quote->quote (e.g. USDT->USDT) intent.
     universe_set = {t.upper() for t in cfg.get("universe", [])}
-    entry_views = [v for v in views if v.symbol.upper() in universe_set]
+    # Buys target only leaderboard-COUNTED, correctly-priced tokens. The live leaderboard credits a
+    # swap only when both legs are eligible tokens; WBNB is a BNB conversion (never counted) and
+    # BTCB carries an unreliable CMC mark (it also corrupts NAV). Entering either builds positions
+    # that never score, so restrict entry candidates to ETH/CAKE. Sells of any already-held token
+    # (exits, rebalances) are unaffected — the agent can still unwind WBNB/BTCB it holds.
+    buy_set = universe_set & {"ETH", "CAKE"}
+    entry_views = [v for v in views if v.symbol.upper() in buy_set]
     max_risky = float(risk.get("max_risky_exposure_pct", 0.20))
     room = max_risky - portfolio.risky_exposure_pct
     can_take_risk = rung in ("none", "halve_size") and room > 0.01
