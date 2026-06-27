@@ -154,7 +154,7 @@ def decide(views: list[TokenView], portfolio: PortfolioState, cfg: dict, now_ts:
     # in-policy here. Selling also recovers the trimmed value into the correctly-priced quote asset,
     # which lifts NAV and helps the agent climb back out of the drawdown rung on its own.
     # Threshold is a code default (not a config key) so the committed policy hash is unchanged.
-    compliance_gap = float(mt.get("compliance_max_gap_seconds", 14400))  # 4h
+    compliance_gap = float(mt.get("compliance_max_gap_seconds", 3600))  # 1h
     if rung == "no_new_risk" and portfolio.seconds_since_last_trade >= compliance_gap:
         sellable = {s: p for s, p in portfolio.positions.items()
                     if p.qty * price.get(s.upper(), 0.0) >= 1.0}
