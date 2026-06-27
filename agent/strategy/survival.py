@@ -145,6 +145,27 @@ def decide(views: list[TokenView], portfolio: PortfolioState, cfg: dict, now_ts:
             return Intent("rebalance", chain, sym, quote, round(micro, 2), 0.4,
                           f"micro-rebalance down toward {target*100:.0f}% risky ({sym})")
 
+    # 3b. MIN-TRADE FLOOR UNDER no_new_risk — honour the committed minimum daily trade count even
+    # when the drawdown ladder forbids new risk. The up-rebalance above is gated off here
+    # (can_take_risk is False under no_new_risk), so a wedged agent holding only a small position
+    # can otherwise sit a whole UTC day at zero qualifying swaps and fall off the leaderboard. If a
+    # full compliance gap has elapsed with no trade, meet the commitment by trimming risk DOWN: a
+    # tiny sell of an existing holding back to the quote asset takes no new risk, so it stays
+    # in-policy here. Selling also recovers the trimmed value into the correctly-priced quote asset,
+    # which lifts NAV and helps the agent climb back out of the drawdown rung on its own.
+    # Threshold is a code default (not a config key) so the committed policy hash is unchanged.
+    compliance_gap = float(mt.get("compliance_max_gap_seconds", 14400))  # 4h
+    if rung == "no_new_risk" and portfolio.seconds_since_last_trade >= compliance_gap:
+        sellable = {s: p for s, p in portfolio.positions.items()
+                    if p.qty * price.get(s.upper(), 0.0) >= 1.0}
+        if sellable:
+            key = max(sellable, key=lambda s: sellable[s].qty * price.get(s.upper(), 0.0))
+            sym = key.upper()
+            pos_val = sellable[key].qty * price.get(sym, 0.0)
+            trim_usd = round(min(micro, max(1.5, pos_val * 0.5)), 2)
+            return Intent("rebalance", chain, sym, quote, trim_usd, 0.4,
+                          f"min-trade floor (no_new_risk, {portfolio.drawdown_pct:.1f}% dd): trim {sym}")
+
     # 4. HOLD — name the binding reason for the abstention ledger.
     if rung in ("stablecoin_mode", "no_new_risk"):
         why = "drawdown_proximity"
