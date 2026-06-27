@@ -165,6 +165,22 @@ def decide(views: list[TokenView], portfolio: PortfolioState, cfg: dict, now_ts:
             trim_usd = round(min(micro, max(1.5, pos_val * 0.5)), 2)
             return Intent("rebalance", chain, sym, quote, trim_usd, 0.4,
                           f"min-trade floor (no_new_risk, {portfolio.drawdown_pct:.1f}% dd): trim {sym}")
+        # Nothing correctly valued to trim (only dust or a token whose NAV mark is unreliable
+        # remains). Keep the daily swap alive with a tiny buy of the calmest correctly-priced
+        # universe token. A correctly-priced buy is NAV-neutral, so it does not deepen the
+        # drawdown, and it gives the next tick something to trim back — a quote<->token heartbeat
+        # that costs only fees. Skip BTCB: its NAV mark is unreliable here, so buying it would
+        # distort NAV and re-wedge the ladder (pricing fix tracked separately).
+        cand = sorted((v for v in entry_views
+                       if v.symbol.upper() not in portfolio.positions
+                       and v.symbol.upper() != "BTCB"
+                       and (v.price or 0.0) > 0.0),
+                      key=lambda v: v.vol_24h_pct if v.vol_24h_pct is not None else 1e9)
+        if cand:
+            tok = cand[0].symbol.upper()
+            buy_usd = round(min(micro, max(1.5, 0.02 * portfolio.nav_usd)), 2)
+            return Intent("rebalance", chain, quote, tok, buy_usd, 0.4,
+                          f"min-trade floor (no_new_risk, {portfolio.drawdown_pct:.1f}% dd): tiny {tok} to keep the daily swap")
 
     # 4. HOLD — name the binding reason for the abstention ledger.
     if rung in ("stablecoin_mode", "no_new_risk"):

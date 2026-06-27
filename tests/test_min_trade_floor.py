@@ -44,3 +44,17 @@ def test_floor_does_not_churn_before_gap():
     intent = survival.decide(VIEWS, ps, CFG, now_ts=1000.0)
     assert intent.action == "hold"
     assert intent.abstain_reason == "drawdown_proximity"
+
+
+def test_floor_buys_when_nothing_sellable():
+    # Wedged with only cash left (no correctly-valued holding to trim): keep the daily swap
+    # alive with a tiny buy of a correctly-priced token, never BTCB.
+    ps = survival.PortfolioState(
+        nav_usd=190.0, stable_usd=190.0, positions={},
+        drawdown_pct=2.5, risky_exposure_pct=0.0, trades_this_week=3,
+        seconds_since_last_trade=20000.0,
+    )
+    intent = survival.decide(VIEWS, ps, CFG, now_ts=1000.0)
+    assert intent.action == "rebalance"
+    assert intent.from_token == "USDT" and intent.to_token in {"WBNB", "ETH", "CAKE"}
+    assert intent.to_token != "BTCB" and intent.amount_usd > 0.0
