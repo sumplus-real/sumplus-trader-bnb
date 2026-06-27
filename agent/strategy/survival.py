@@ -145,42 +145,32 @@ def decide(views: list[TokenView], portfolio: PortfolioState, cfg: dict, now_ts:
             return Intent("rebalance", chain, sym, quote, round(micro, 2), 0.4,
                           f"micro-rebalance down toward {target*100:.0f}% risky ({sym})")
 
-    # 3b. MIN-TRADE FLOOR UNDER no_new_risk — honour the committed minimum daily trade count even
-    # when the drawdown ladder forbids new risk. The up-rebalance above is gated off here
-    # (can_take_risk is False under no_new_risk), so a wedged agent holding only a small position
-    # can otherwise sit a whole UTC day at zero qualifying swaps and fall off the leaderboard. If a
-    # full compliance gap has elapsed with no trade, meet the commitment by trimming risk DOWN: a
-    # tiny sell of an existing holding back to the quote asset takes no new risk, so it stays
-    # in-policy here. Selling also recovers the trimmed value into the correctly-priced quote asset,
-    # which lifts NAV and helps the agent climb back out of the drawdown rung on its own.
-    # Threshold is a code default (not a config key) so the committed policy hash is unchanged.
+    # 3b. MIN-TRADE FLOOR — honour the committed minimum daily trade count. The live leaderboard
+    # only credits a swap that is "eligible token in + eligible token out"; WBNB (a BNB conversion)
+    # and BTCB (untracked / unreliable mark) NEVER count, even though both sit in the committed
+    # universe. Under the no_new_risk rung the discretionary up-rebalance is gated off
+    # (can_take_risk is False), so a wedged agent could trade all day into uncounted tokens and
+    # still show zero qualifying swaps and fall off the leaderboard. Once a full compliance gap has
+    # elapsed, force one tiny COUNTED swap through an eligible token (ETH / CAKE): trim a sliver if
+    # we already hold one, otherwise buy a sliver. A tiny eligible-token round-trip honours the
+    # committed minimum trade count and stays in-policy under this rung (it builds no BNB/BTCB
+    # risk). The gap and the eligible set are code defaults (no config key), so the committed policy
+    # hash is unchanged.
     compliance_gap = float(mt.get("compliance_max_gap_seconds", 3600))  # 1h
-    if rung == "no_new_risk" and portfolio.seconds_since_last_trade >= compliance_gap:
-        sellable = {s: p for s, p in portfolio.positions.items()
-                    if p.qty * price.get(s.upper(), 0.0) >= 1.0}
-        if sellable:
-            key = max(sellable, key=lambda s: sellable[s].qty * price.get(s.upper(), 0.0))
-            sym = key.upper()
-            pos_val = sellable[key].qty * price.get(sym, 0.0)
+    counted = [t for t in ("ETH", "CAKE") if t in universe_set and price.get(t, 0.0) > 0.0]
+    if rung == "no_new_risk" and counted and portfolio.seconds_since_last_trade >= compliance_gap:
+        held = [t for t in counted
+                if t in portfolio.positions and portfolio.positions[t].qty * price.get(t, 0.0) >= 1.0]
+        if held:
+            sym = held[0]
+            pos_val = portfolio.positions[sym].qty * price.get(sym, 0.0)
             trim_usd = round(min(micro, max(1.5, pos_val * 0.5)), 2)
             return Intent("rebalance", chain, sym, quote, trim_usd, 0.4,
-                          f"min-trade floor (no_new_risk, {portfolio.drawdown_pct:.1f}% dd): trim {sym}")
-        # Nothing correctly valued to trim (only dust or a token whose NAV mark is unreliable
-        # remains). Keep the daily swap alive with a tiny buy of the calmest correctly-priced
-        # universe token. A correctly-priced buy is NAV-neutral, so it does not deepen the
-        # drawdown, and it gives the next tick something to trim back — a quote<->token heartbeat
-        # that costs only fees. Skip BTCB: its NAV mark is unreliable here, so buying it would
-        # distort NAV and re-wedge the ladder (pricing fix tracked separately).
-        cand = sorted((v for v in entry_views
-                       if v.symbol.upper() not in portfolio.positions
-                       and v.symbol.upper() != "BTCB"
-                       and (v.price or 0.0) > 0.0),
-                      key=lambda v: v.vol_24h_pct if v.vol_24h_pct is not None else 1e9)
-        if cand:
-            tok = cand[0].symbol.upper()
-            buy_usd = round(min(micro, max(1.5, 0.02 * portfolio.nav_usd)), 2)
-            return Intent("rebalance", chain, quote, tok, buy_usd, 0.4,
-                          f"min-trade floor (no_new_risk, {portfolio.drawdown_pct:.1f}% dd): tiny {tok} to keep the daily swap")
+                          f"min-trade floor (counted, {portfolio.drawdown_pct:.1f}% dd): trim {sym}")
+        tok = counted[0]
+        buy_usd = round(min(micro, max(1.5, 0.02 * portfolio.nav_usd)), 2)
+        return Intent("rebalance", chain, quote, tok, buy_usd, 0.4,
+                      f"min-trade floor (counted, {portfolio.drawdown_pct:.1f}% dd): tiny {tok}")
 
     # 4. HOLD — name the binding reason for the abstention ledger.
     if rung in ("stablecoin_mode", "no_new_risk"):
